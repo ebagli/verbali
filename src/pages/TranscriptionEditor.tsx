@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -169,8 +170,8 @@ const TranscriptionEditor = () => {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <main className="container py-6 space-y-6 max-w-4xl">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+      <main className="container py-6 max-w-[1600px]">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5">
             <ArrowLeft className="h-4 w-4" /> Indietro
           </Button>
@@ -184,124 +185,130 @@ const TranscriptionEditor = () => {
           </div>
         </div>
 
-        {/* Date */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-muted-foreground">Data Conversazione</label>
-          <Input
-            type="date"
-            value={conversationDate}
-            onChange={(e) => setConversationDate(e.target.value)}
-            className="max-w-xs"
-          />
-        </div>
-
-        {/* Speaker Mapping */}
-        <SpeakerMappingCard
-          segments={segments}
-          mapping={speakerMapping}
-          onMappingChange={setSpeakerMapping}
-        />
-
-        {/* Flag section */}
-        <Card className={isFlagged ? "border-destructive/40 bg-destructive/5" : "border-border/60"}>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className={`h-4 w-4 ${isFlagged ? "text-destructive" : "text-muted-foreground"}`} />
-                <span className="text-sm font-medium">
-                  {isFlagged ? "Segnalato come problematico" : "Segnala questa discussione"}
-                </span>
-              </div>
-              <Button variant={isFlagged ? "destructive" : "outline"} size="sm" onClick={toggleFlag}>
-                {isFlagged ? "Rimuovi Segnalazione" : "Segnala"}
-              </Button>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* LEFT COLUMN — Transcription */}
+          <div className="space-y-6">
+            {/* Date */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">Data Conversazione</label>
+              <Input
+                type="date"
+                value={conversationDate}
+                onChange={(e) => setConversationDate(e.target.value)}
+                className="max-w-xs"
+              />
             </div>
-            {isFlagged && (
-              <div className="space-y-2">
-                <Input placeholder="Motivo della segnalazione…" value={flagReason} onChange={(e) => setFlagReason(e.target.value)} />
-                <Textarea placeholder="Note aggiuntive…" value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} rows={2} />
-                <Button variant="secondary" size="sm" onClick={saveFlagDetails}>
-                  Salva Dettagli Segnalazione
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Transcript */}
-        <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Trascrizione</CardTitle>
-            <Button variant="outline" size="sm" onClick={() => addSegment()} className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Aggiungi Segmento
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {segments.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">Nessun segmento di trascrizione.</p>
-            ) : (
-              segments.map((seg, i) => (
-                <div key={i} className="flex gap-3 items-start group">
-                  <div className="w-40 shrink-0 space-y-1">
-                    <Select
-                      value={seg.speaker}
-                      onValueChange={(val) => {
-                        if (val === "__new__") {
-                          const nextIndex = uniqueSpeakers.filter((s) => s.startsWith("speaker_")).length;
-                          updateSegment(i, "speaker", `speaker_${nextIndex}`);
-                        } else {
-                          updateSegment(i, "speaker", val);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {uniqueSpeakers.map((spk) => (
-                          <SelectItem key={spk} value={spk}>
-                            {spk} {speakerMapping[spk] ? `(${getDisplayName(spk)})` : ""}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__new__">+ Nuovo speaker</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <span className="text-xs text-muted-foreground block truncate">{getDisplayName(seg.speaker)}</span>
+            {/* Speaker Mapping */}
+            <SpeakerMappingCard
+              segments={segments}
+              mapping={speakerMapping}
+              onMappingChange={setSpeakerMapping}
+            />
+
+            {/* Flag section */}
+            <Card className={isFlagged ? "border-destructive/40 bg-destructive/5" : "border-border/60"}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className={`h-4 w-4 ${isFlagged ? "text-destructive" : "text-muted-foreground"}`} />
+                    <span className="text-sm font-medium">
+                      {isFlagged ? "Segnalato come problematico" : "Segnala questa discussione"}
+                    </span>
                   </div>
-                  <Textarea
-                    value={seg.text}
-                    onChange={(e) => updateSegment(i, "text", e.target.value)}
-                    className="flex-1 min-h-[40px] text-sm"
-                    rows={1}
-                  />
-                  <div className="flex flex-col items-center gap-1 shrink-0 mt-1">
-                    {seg.start != null && (
-                      <Badge variant="secondary" className="text-xs">
-                        {Math.floor(seg.start / 60)}:{String(Math.floor(seg.start % 60)).padStart(2, "0")}
-                      </Badge>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                      onClick={() => removeSegment(i)}
-                    >
-                      <X className="h-3.5 w-3.5" />
+                  <Button variant={isFlagged ? "destructive" : "outline"} size="sm" onClick={toggleFlag}>
+                    {isFlagged ? "Rimuovi Segnalazione" : "Segnala"}
+                  </Button>
+                </div>
+                {isFlagged && (
+                  <div className="space-y-2">
+                    <Input placeholder="Motivo della segnalazione…" value={flagReason} onChange={(e) => setFlagReason(e.target.value)} />
+                    <Textarea placeholder="Note aggiuntive…" value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} rows={2} />
+                    <Button variant="secondary" size="sm" onClick={saveFlagDetails}>
+                      Salva Dettagli Segnalazione
                     </Button>
                   </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* Verbale Generator */}
-        <VerbaleManager
-          segments={segments}
-          speakerMapping={speakerMapping}
-          transcriptionId={id!}
-          conversationDate={conversationDate}
-        />
+            {/* Transcript */}
+            <Card>
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-lg">Trascrizione</CardTitle>
+                <Button variant="outline" size="sm" onClick={() => addSegment()} className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" /> Aggiungi Segmento
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {segments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">Nessun segmento di trascrizione.</p>
+                ) : (
+                  segments.map((seg, i) => (
+                    <div key={i} className="flex gap-2 items-start group">
+                      <div className="w-28 shrink-0 space-y-1">
+                        <Select
+                          value={seg.speaker}
+                          onValueChange={(val) => {
+                            if (val === "__new__") {
+                              const nextIndex = uniqueSpeakers.filter((s) => s.startsWith("speaker_")).length;
+                              updateSegment(i, "speaker", `speaker_${nextIndex}`);
+                            } else {
+                              updateSegment(i, "speaker", val);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {uniqueSpeakers.map((spk) => (
+                              <SelectItem key={spk} value={spk}>
+                                {spk}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="__new__">+ Nuovo</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-[10px] text-muted-foreground block truncate" title={getDisplayName(seg.speaker)}>{getDisplayName(seg.speaker)}</span>
+                      </div>
+                      <AutoResizeTextarea
+                        value={seg.text}
+                        onChange={(e) => updateSegment(i, "text", e.target.value)}
+                        className="flex-1 text-sm"
+                      />
+                      <div className="flex flex-col items-center gap-1 shrink-0 mt-1">
+                        {seg.start != null && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5">
+                            {Math.floor(seg.start / 60)}:{String(Math.floor(seg.start % 60)).padStart(2, "0")}
+                          </Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                          onClick={() => removeSegment(i)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* RIGHT COLUMN — Verbale */}
+          <div className="lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto space-y-6">
+            <VerbaleManager
+              segments={segments}
+              speakerMapping={speakerMapping}
+              transcriptionId={id!}
+              conversationDate={conversationDate}
+            />
+          </div>
+        </div>
       </main>
     </div>
   );

@@ -215,14 +215,9 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
   return (
     <div className="space-y-4">
       {/* Section Title */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-bold">Genera Verbale</h2>
-        </div>
-        <Button variant="secondary" size="sm" onClick={saveVerbale} disabled={savingVerbale} className="gap-1.5">
-          <Save className="h-3.5 w-3.5" /> {savingVerbale ? "Salvataggio…" : "Salva Verbale"}
-        </Button>
+      <div className="flex items-center gap-2">
+        <FileText className="h-5 w-5 text-primary" />
+        <h2 className="text-xl font-bold">Genera Verbale</h2>
       </div>
 
       {/* Header */}
@@ -301,10 +296,15 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         onNextMeetingTimeChange={setNextMeetingTime}
       />
 
-      {/* Export */}
-      <Button onClick={handleExportDocx} className="w-full gap-2" size="lg">
-        <Download className="h-4 w-4" /> Genera Verbale (.docx)
-      </Button>
+      {/* Save + Export */}
+      <div className="flex gap-2">
+        <Button variant="secondary" onClick={saveVerbale} disabled={savingVerbale} className="gap-1.5 flex-1" size="lg">
+          <Save className="h-4 w-4" /> {savingVerbale ? "Salvataggio…" : "Salva Verbale"}
+        </Button>
+        <Button onClick={handleExportDocx} className="gap-2 flex-1" size="lg">
+          <Download className="h-4 w-4" /> Genera DOCX
+        </Button>
+      </div>
     </div>
   );
 }

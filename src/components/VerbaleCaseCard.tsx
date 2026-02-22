@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,11 +49,10 @@ export function VerbaleCaseCard({ caseData, index, canRemove, onChange, onRemove
           </div>
         </div>
 
-        <Textarea
+        <AutoResizeTextarea
           placeholder="Descrizione clinico/legale del caso (es. esiti ATP, stato CTU, perizie...)"
           value={caseData.description}
           onChange={(e) => onChange("description", e.target.value)}
-          rows={3}
         />
 
         <div className="flex gap-2">
