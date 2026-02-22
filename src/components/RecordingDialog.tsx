@@ -51,12 +51,15 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   }, []);
 
   const processAudio = async (blob: Blob) => {
-    if (!user) {
-      toast.error("You must be signed in");
-      return;
-    }
     setProcessing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        toast.error("You must be signed in");
+        setProcessing(false);
+        return;
+      }
+
       const formData = new FormData();
       formData.append("audio", blob, "recording.webm");
 
@@ -65,7 +68,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            Authorization: `Bearer ${session.access_token}`,
           },
           body: formData,
         }
@@ -96,7 +99,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       const { data, error } = await supabase
         .from("transcriptions")
         .insert({
-          user_id: user!.id,
+          user_id: session.user.id,
           transcript_json: finalSegments as any,
           conversation_date: new Date().toISOString().split("T")[0],
         })
