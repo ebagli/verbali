@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Mic, Square, Loader2 } from "lucide-react";
+import { Mic, Square, Loader2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface Props {
@@ -18,8 +18,10 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   const navigate = useNavigate();
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState("Transcribing audio…");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const startRecording = useCallback(async () => {
     try {
@@ -50,7 +52,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     setRecording(false);
   }, []);
 
-  const processAudio = async (blob: Blob) => {
+  const processAudio = async (blob: Blob | File) => {
     setProcessing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -60,8 +62,9 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
         return;
       }
 
+      const fileName = blob instanceof File ? blob.name : "recording.webm";
       const formData = new FormData();
-      formData.append("audio", blob, "recording.webm");
+      formData.append("audio", blob, fileName);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe`,
@@ -127,15 +130,15 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Record Audio</DialogTitle>
-          <DialogDescription>
-            Record a conversation and it will be automatically transcribed.
+        <DialogDescription>
+            Record a conversation or upload an audio file to transcribe.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center gap-6 py-8">
           {processing ? (
             <>
               <Loader2 className="h-16 w-16 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground">Transcribing audio…</p>
+              <p className="text-sm text-muted-foreground">{processingLabel}</p>
             </>
           ) : (
             <>
@@ -152,6 +155,31 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
               <p className="text-sm text-muted-foreground">
                 {recording ? "Recording… Click to stop" : "Click to start recording"}
               </p>
+
+              <div className="w-full border-t pt-4 flex flex-col items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setProcessingLabel(`Trascrizione di "${file.name}"…`);
+                      processAudio(file);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4" /> Carica file audio
+                </Button>
+                <p className="text-xs text-muted-foreground">MP3, WAV, M4A, WebM…</p>
+              </div>
             </>
           )}
         </div>
