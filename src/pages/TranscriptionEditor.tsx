@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, AlertTriangle, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, AlertTriangle, Trash2, Plus, X } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbaleManager } from "@/components/VerbaleManager";
 
@@ -89,6 +90,25 @@ const TranscriptionEditor = () => {
   const updateSegment = (index: number, field: keyof TranscriptSegment, value: string) => {
     setSegments((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
   };
+
+  const addSegment = (afterIndex?: number) => {
+    const newSeg: TranscriptSegment = { speaker: "speaker_0", text: "" };
+    setSegments((prev) => {
+      if (afterIndex !== undefined) {
+        const copy = [...prev];
+        copy.splice(afterIndex + 1, 0, newSeg);
+        return copy;
+      }
+      return [...prev, newSeg];
+    });
+  };
+
+  const removeSegment = (index: number) => {
+    setSegments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Collect all unique speaker labels from segments
+  const uniqueSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
 
   const toggleFlag = async () => {
     if (isFlagged && problematicCaseId) {
@@ -210,8 +230,11 @@ const TranscriptionEditor = () => {
 
         {/* Transcript */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Trascrizione</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => addSegment()} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Aggiungi Segmento
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {segments.length === 0 ? (
@@ -219,9 +242,31 @@ const TranscriptionEditor = () => {
             ) : (
               segments.map((seg, i) => (
                 <div key={i} className="flex gap-3 items-start group">
-                  <div className="w-36 shrink-0">
-                    <span className="text-xs text-muted-foreground block">{seg.speaker}</span>
-                    <span className="text-sm font-medium block">{getDisplayName(seg.speaker)}</span>
+                  <div className="w-40 shrink-0 space-y-1">
+                    <Select
+                      value={seg.speaker}
+                      onValueChange={(val) => {
+                        if (val === "__new__") {
+                          const nextIndex = uniqueSpeakers.filter((s) => s.startsWith("speaker_")).length;
+                          updateSegment(i, "speaker", `speaker_${nextIndex}`);
+                        } else {
+                          updateSegment(i, "speaker", val);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniqueSpeakers.map((spk) => (
+                          <SelectItem key={spk} value={spk}>
+                            {spk} {speakerMapping[spk] ? `(${getDisplayName(spk)})` : ""}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="__new__">+ Nuovo speaker</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs text-muted-foreground block truncate">{getDisplayName(seg.speaker)}</span>
                   </div>
                   <Textarea
                     value={seg.text}
@@ -229,11 +274,21 @@ const TranscriptionEditor = () => {
                     className="flex-1 min-h-[40px] text-sm"
                     rows={1}
                   />
-                  {seg.start != null && (
-                    <Badge variant="secondary" className="text-xs shrink-0 mt-2">
-                      {Math.floor(seg.start / 60)}:{String(Math.floor(seg.start % 60)).padStart(2, "0")}
-                    </Badge>
-                  )}
+                  <div className="flex flex-col items-center gap-1 shrink-0 mt-1">
+                    {seg.start != null && (
+                      <Badge variant="secondary" className="text-xs">
+                        {Math.floor(seg.start / 60)}:{String(Math.floor(seg.start % 60)).padStart(2, "0")}
+                      </Badge>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                      onClick={() => removeSegment(i)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
