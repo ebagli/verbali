@@ -5,13 +5,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, AlertTriangle, Trash2, Plus, X, Download } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Plus, X, Download } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbaleManager } from "@/components/VerbaleManager";
 import { exportTranscriptDocx } from "@/lib/docx-export";
@@ -33,10 +33,6 @@ const TranscriptionEditor = () => {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakerMapping, setSpeakerMapping] = useState<Record<string, string>>({});
   const [speakers, setSpeakers] = useState<{ id: string; full_name: string; title: string }[]>([]);
-  const [isFlagged, setIsFlagged] = useState(false);
-  const [flagReason, setFlagReason] = useState("");
-  const [flagNotes, setFlagNotes] = useState("");
-  const [problematicCaseId, setProblematicCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -51,10 +47,7 @@ const TranscriptionEditor = () => {
 
   const fetchTranscription = async () => {
     setLoading(true);
-    const [{ data: t, error }, { data: cases }] = await Promise.all([
-      supabase.from("transcriptions").select("*").eq("id", id!).single(),
-      supabase.from("problematic_cases").select("*").eq("transcription_id", id!),
-    ]);
+    const { data: t, error } = await supabase.from("transcriptions").select("*").eq("id", id!).single();
     if (error || !t) {
       toast.error("Transcription not found");
       navigate("/");
@@ -63,12 +56,6 @@ const TranscriptionEditor = () => {
     setConversationDate(t.conversation_date);
     setSegments((t.transcript_json as unknown as TranscriptSegment[]) || []);
     setSpeakerMapping(((t as any).speaker_mapping as Record<string, string>) || {});
-    if (cases && cases.length > 0) {
-      setIsFlagged(true);
-      setFlagReason(cases[0].reason);
-      setFlagNotes(cases[0].notes || "");
-      setProblematicCaseId(cases[0].id);
-    }
     setLoading(false);
   };
 
@@ -112,43 +99,6 @@ const TranscriptionEditor = () => {
   // Collect all unique speaker labels from segments
   const uniqueSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
 
-  const toggleFlag = async () => {
-    if (isFlagged && problematicCaseId) {
-      await supabase.from("problematic_cases").delete().eq("id", problematicCaseId);
-      setIsFlagged(false);
-      setProblematicCaseId(null);
-      setFlagReason("");
-      setFlagNotes("");
-      toast.success("Flag rimosso");
-    } else {
-      const { data, error } = await supabase
-        .from("problematic_cases")
-        .insert({
-          transcription_id: id!,
-          user_id: user!.id,
-          reason: flagReason || "Segnalato per revisione",
-        })
-        .select()
-        .single();
-      if (error) {
-        toast.error("Errore nella segnalazione");
-        return;
-      }
-      setIsFlagged(true);
-      setProblematicCaseId(data.id);
-      toast.success("Segnalato come problematico");
-    }
-  };
-
-  const saveFlagDetails = async () => {
-    if (!problematicCaseId) return;
-    const { error } = await supabase
-      .from("problematic_cases")
-      .update({ reason: flagReason, notes: flagNotes })
-      .eq("id", problematicCaseId);
-    if (error) toast.error("Errore aggiornamento segnalazione");
-    else toast.success("Dettagli segnalazione salvati");
-  };
 
   const handleDelete = async () => {
     if (!confirm("Eliminare questa trascrizione in modo permanente?")) return;
@@ -207,31 +157,7 @@ const TranscriptionEditor = () => {
               onMappingChange={setSpeakerMapping}
             />
 
-            {/* Flag section */}
-            <Card className={isFlagged ? "border-destructive/40 bg-destructive/5" : "border-border/60"}>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className={`h-4 w-4 ${isFlagged ? "text-destructive" : "text-muted-foreground"}`} />
-                    <span className="text-sm font-medium">
-                      {isFlagged ? "Segnalato come problematico" : "Segnala questa discussione"}
-                    </span>
-                  </div>
-                  <Button variant={isFlagged ? "destructive" : "outline"} size="sm" onClick={toggleFlag}>
-                    {isFlagged ? "Rimuovi Segnalazione" : "Segnala"}
-                  </Button>
-                </div>
-                {isFlagged && (
-                  <div className="space-y-2">
-                    <Input placeholder="Motivo della segnalazione…" value={flagReason} onChange={(e) => setFlagReason(e.target.value)} />
-                    <Textarea placeholder="Note aggiuntive…" value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} rows={2} />
-                    <Button variant="secondary" size="sm" onClick={saveFlagDetails}>
-                      Salva Dettagli Segnalazione
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+
 
             {/* Transcript */}
             <Card>

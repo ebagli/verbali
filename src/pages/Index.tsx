@@ -7,8 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Calendar, AlertTriangle, FileText, Mic } from "lucide-react";
-import { toast } from "sonner";
+import { Search, Calendar, FileText, Mic } from "lucide-react";
 import { RecordingDialog } from "@/components/RecordingDialog";
 
 interface Transcription {
@@ -19,17 +18,11 @@ interface Transcription {
   summary: string;
 }
 
-interface ProblematicCase {
-  transcription_id: string;
-}
-
 const Index = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([]);
-  const [flagged, setFlagged] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [filterFlagged, setFilterFlagged] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showRecording, setShowRecording] = useState(false);
 
@@ -40,36 +33,24 @@ const Index = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    const [{ data: t }, { data: p }] = await Promise.all([
-      supabase
-        .from("transcriptions")
-        .select("*")
-        .order("conversation_date", { ascending: false }),
-      supabase
-        .from("problematic_cases")
-        .select("transcription_id"),
-    ]);
+    const { data: t } = await supabase
+      .from("transcriptions")
+      .select("*")
+      .order("conversation_date", { ascending: false });
     setTranscriptions((t as Transcription[]) || []);
-    setFlagged(new Set((p as ProblematicCase[])?.map((c) => c.transcription_id) || []));
     setLoading(false);
   };
 
   const filtered = useMemo(() => {
-    let items = transcriptions;
-    if (search) {
-      const q = search.toLowerCase();
-      items = items.filter(
-        (t) =>
-          t.summary?.toLowerCase().includes(q) ||
-          JSON.stringify(t.transcript_json).toLowerCase().includes(q) ||
-          t.conversation_date.includes(q)
-      );
-    }
-    if (filterFlagged) {
-      items = items.filter((t) => flagged.has(t.id));
-    }
-    return items;
-  }, [transcriptions, search, filterFlagged, flagged]);
+    if (!search) return transcriptions;
+    const q = search.toLowerCase();
+    return transcriptions.filter(
+      (t) =>
+        t.summary?.toLowerCase().includes(q) ||
+        JSON.stringify(t.transcript_json).toLowerCase().includes(q) ||
+        t.conversation_date.includes(q)
+    );
+  }, [transcriptions, search]);
 
   const getPreview = (t: Transcription) => {
     if (t.summary) return t.summary.slice(0, 120) + (t.summary.length > 120 ? "…" : "");
@@ -99,25 +80,14 @@ const Index = () => {
           </Button>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search transcriptions…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Button
-            variant={filterFlagged ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilterFlagged(!filterFlagged)}
-            className="gap-1.5"
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            Flagged
-          </Button>
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search transcriptions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
         </div>
 
         {loading ? (
@@ -145,12 +115,6 @@ const Index = () => {
                         <Calendar className="h-3.5 w-3.5" />
                         {new Date(t.conversation_date).toLocaleDateString()}
                       </span>
-                      {flagged.has(t.id) && (
-                        <Badge variant="destructive" className="text-xs gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          Flagged
-                        </Badge>
-                      )}
                       <Badge variant="secondary" className="text-xs">
                         {getSpeakerCount(t)} speaker{getSpeakerCount(t) !== 1 ? "s" : ""}
                       </Badge>
