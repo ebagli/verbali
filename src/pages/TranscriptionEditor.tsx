@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Sparkles, AlertTriangle, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, AlertTriangle, Trash2 } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
-import { ReportGenerator } from "@/components/ReportGenerator";
+import { VerbaleManager } from "@/components/VerbaleManager";
 
 interface TranscriptSegment {
   speaker: string;
@@ -26,11 +26,8 @@ const TranscriptionEditor = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [summarizing, setSummarizing] = useState(false);
   const [conversationDate, setConversationDate] = useState("");
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
-  const [summary, setSummary] = useState("");
-  const [reportHtml, setReportHtml] = useState("");
   const [speakerMapping, setSpeakerMapping] = useState<Record<string, string>>({});
   const [speakers, setSpeakers] = useState<{ id: string; full_name: string; title: string }[]>([]);
   const [isFlagged, setIsFlagged] = useState(false);
@@ -62,8 +59,6 @@ const TranscriptionEditor = () => {
     }
     setConversationDate(t.conversation_date);
     setSegments((t.transcript_json as unknown as TranscriptSegment[]) || []);
-    setSummary(t.summary || "");
-    setReportHtml((t as any).report_html || "");
     setSpeakerMapping(((t as any).speaker_mapping as Record<string, string>) || {});
     if (cases && cases.length > 0) {
       setIsFlagged(true);
@@ -83,32 +78,12 @@ const TranscriptionEditor = () => {
       .update({
         conversation_date: conversationDate,
         transcript_json: segments as any,
-        summary,
-        report_html: reportHtml,
         speaker_mapping: speakerMapping,
       } as any)
       .eq("id", id!);
     if (error) toast.error("Failed to save");
     else toast.success("Salvato con successo");
     setSaving(false);
-  };
-
-  const handleSummarize = async () => {
-    setSummarizing(true);
-    try {
-      const fullText = segments
-        .map((s) => `${getDisplayName(s.speaker)}: ${s.text}`)
-        .join("\n");
-      const { data, error } = await supabase.functions.invoke("summarize", {
-        body: { text: fullText },
-      });
-      if (error) throw error;
-      setSummary(data.summary);
-      toast.success("Riepilogo generato");
-    } catch {
-      toast.error("Generazione riepilogo fallita");
-    }
-    setSummarizing(false);
   };
 
   const updateSegment = (index: number, field: keyof TranscriptSegment, value: string) => {
@@ -265,54 +240,11 @@ const TranscriptionEditor = () => {
           </CardContent>
         </Card>
 
-        {/* Summary */}
-        <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Riepilogo</CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSummarize}
-              disabled={summarizing || segments.length === 0}
-              className="gap-1.5"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {summarizing ? "Generazione…" : "Genera Riepilogo"}
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              placeholder="Il riepilogo apparirà qui…"
-              rows={5}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Report Generator */}
-        <ReportGenerator
-          transcriptionId={id!}
+        {/* Verbale Generator */}
+        <VerbaleManager
           segments={segments}
           speakerMapping={speakerMapping}
-          onReportGenerated={(report) => {
-            setReportHtml(report);
-          }}
         />
-
-        {/* Generated Report Preview */}
-        {reportHtml && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Verbale Generato</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap font-serif text-sm leading-relaxed">
-                {reportHtml}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </main>
     </div>
   );

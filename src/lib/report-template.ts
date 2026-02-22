@@ -1,38 +1,43 @@
 export const REPORT_TEMPLATE = {
   header: {
-    title: "Verbale Comitato Valutazione Sinistri",
-    fields: ["Struttura Sanitaria", "Data Incontro", "Partecipanti"],
+    title: "Comitato Valutazione Gestione Sinistri",
   },
   sections: {
-    agenda: "ORDINE DEL GIORNO",
-    case_detail: "DISCUSSIONE PRATICHE",
+    agenda: "ODG: discussione pratiche in autogestione",
+    case_detail: "Casi in discussione",
+    new_claims: "Nuove richieste di risarcimento",
     footer: "CHIUSURA LAVORI",
   },
   standard_outcomes: [
     {
-      id: "attesa_istruttoria",
+      id: "istruttoria",
       label: "Attesa Istruttoria",
       text: "Si condivide di attendere l'istruttoria interna per le determinazioni del caso.",
     },
     {
-      id: "mantenimento_riserva",
+      id: "riserva",
       label: "Mantenimento Riserva",
-      text: "Si condivide di mantenere la riserva precedentemente apposta di €",
-    },
-    {
-      id: "proposta_transattiva",
-      label: "Proposta Transattiva",
-      text: "Si condivide di proporre un risarcimento di € con dilazione da concordarsi.",
+      text: "Si condivide di mantenere la riserva precedentemente apposta.",
     },
     {
       id: "prematuro",
       label: "Discussione Prematura",
-      text: "Si ritiene prematura qualsiasi discussione allo stato attuale.",
+      text: "Si ritiene prematuro procedere con l'azzeramento della riserva.",
+    },
+    {
+      id: "sviluppi",
+      label: "Attesa Sviluppi",
+      text: "Si rimane in attesa di sviluppi.",
     },
     {
       id: "archiviazione",
       label: "Archiviazione",
-      text: "Non sussistendo responsabilità in capo alla struttura, la pratica rimane archiviata.",
+      text: "La pratica è stata archiviata stante l'insussistenza di responsabilità.",
+    },
+    {
+      id: "proposta_transattiva",
+      label: "Proposta Transattiva",
+      text: "Si condivide di proporre un risarcimento di €",
     },
   ],
 } as const;
@@ -41,9 +46,10 @@ export type OutcomeId = typeof REPORT_TEMPLATE.standard_outcomes[number]["id"];
 
 export interface ReportCase {
   patientName: string;
-  status: string;
+  description: string;
   outcomeId: OutcomeId | "";
-  outcomeExtra: string; // e.g. amount for riserva/transattiva
+  outcomeExtra: string; // e.g. amount for proposta_transattiva
+  isNewClaim: boolean;
 }
 
 export interface ReportData {
@@ -51,69 +57,17 @@ export interface ReportData {
   meetingDate: string;
   attendees: string[];
   cases: ReportCase[];
+  startTime: string;
   closingTime: string;
   nextMeetingDate: string;
+  nextMeetingTime: string;
 }
 
 export function getOutcomeText(outcomeId: OutcomeId | "", extra: string): string {
   const outcome = REPORT_TEMPLATE.standard_outcomes.find((o) => o.id === outcomeId);
   if (!outcome) return "";
-  if (outcomeId === "mantenimento_riserva" || outcomeId === "proposta_transattiva") {
-    return outcome.text + " " + extra;
+  if (outcomeId === "proposta_transattiva" && extra) {
+    return outcome.text + " " + extra + " con dilazione da concordarsi.";
   }
   return outcome.text;
-}
-
-export function generateReportMarkdown(data: ReportData): string {
-  const lines: string[] = [];
-
-  // Header
-  lines.push(`# ${REPORT_TEMPLATE.header.title}`);
-  lines.push("");
-  lines.push(`**Struttura Sanitaria:** ${data.facilityName}`);
-  lines.push(`**Data Incontro:** ${data.meetingDate}`);
-  lines.push("");
-  lines.push("**Partecipanti:**");
-  data.attendees.forEach((a) => lines.push(`- ${a}`));
-  lines.push("");
-  lines.push("---");
-  lines.push("");
-
-  // Agenda
-  lines.push(`## ${REPORT_TEMPLATE.sections.agenda}`);
-  lines.push("");
-  data.cases.forEach((c, i) => lines.push(`${i + 1}. ${c.patientName}`));
-  lines.push("");
-  lines.push("---");
-  lines.push("");
-
-  // Case details
-  lines.push(`## ${REPORT_TEMPLATE.sections.case_detail}`);
-  lines.push("");
-  data.cases.forEach((c) => {
-    lines.push(`### ${c.patientName.toUpperCase()}`);
-    lines.push("");
-    lines.push(c.status);
-    lines.push("");
-    const determinazione = getOutcomeText(c.outcomeId, c.outcomeExtra);
-    if (determinazione) {
-      lines.push(`**Determinazioni:** ${determinazione}`);
-    }
-    lines.push("");
-    lines.push("---");
-    lines.push("");
-  });
-
-  // Footer
-  lines.push(`## ${REPORT_TEMPLATE.sections.footer}`);
-  lines.push("");
-  lines.push(`Fine lavori ore ${data.closingTime}.`);
-  lines.push("");
-  if (data.nextMeetingDate) {
-    lines.push(`Prossimo incontro: ${data.nextMeetingDate}.`);
-    lines.push("");
-  }
-  lines.push("_Firma:_ ____________________________");
-
-  return lines.join("\n");
 }

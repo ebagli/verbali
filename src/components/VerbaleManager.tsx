@@ -1,0 +1,218 @@
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Plus, Sparkles, Download, FileText } from "lucide-react";
+import { toast } from "sonner";
+import { VerbaleHeader } from "./VerbaleHeader";
+import { VerbaleAgenda } from "./VerbaleAgenda";
+import { VerbaleCaseCard } from "./VerbaleCaseCard";
+import { VerbaleFooter } from "./VerbaleFooter";
+import { exportVerbaleDocx } from "@/lib/docx-export";
+import { type ReportCase, type ReportData } from "@/lib/report-template";
+import { resolveDisplayName } from "./SpeakerMappingCard";
+
+interface TranscriptSegment {
+  speaker: string;
+  text: string;
+}
+
+interface Speaker {
+  id: string;
+  full_name: string;
+  title: string;
+}
+
+interface Props {
+  segments: TranscriptSegment[];
+  speakerMapping: Record<string, string>;
+}
+
+export function VerbaleManager({ segments, speakerMapping }: Props) {
+  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const [facilityName, setFacilityName] = useState("");
+  const [meetingDate, setMeetingDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [selectedAttendees, setSelectedAttendees] = useState<string[]>([]);
+  const [cases, setCases] = useState<ReportCase[]>([]);
+  const [closingTime, setClosingTime] = useState("");
+  const [nextMeetingDate, setNextMeetingDate] = useState("");
+  const [nextMeetingTime, setNextMeetingTime] = useState("");
+  const [extracting, setExtracting] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("speakers")
+      .select("id, full_name, title")
+      .order("full_name")
+      .then(({ data }) => { if (data) setSpeakers(data); });
+  }, []);
+
+  const displayName = (s: Speaker) =>
+    s.title ? `${s.title} ${s.full_name}` : s.full_name;
+
+  const updateCase = (i: number, field: keyof ReportCase, value: string | boolean) => {
+    setCases((prev) => prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)));
+  };
+
+  const addCase = () => {
+    setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isNewClaim: false }]);
+  };
+
+  const removeCase = (i: number) => {
+    setCases((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const handleExtractCases = async () => {
+    if (segments.length === 0) {
+      toast.error("Nessun segmento di trascrizione disponibile.");
+      return;
+    }
+    setExtracting(true);
+    try {
+      const fullText = segments
+        .map((s) => {
+          const name = resolveDisplayName(s.speaker, speakerMapping, speakers);
+          return `${name}: ${s.text}`;
+        })
+        .join("\n");
+
+      const { data, error } = await supabase.functions.invoke("extract-cases", {
+        body: { transcript_text: fullText },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const extracted: ReportCase[] = (data.cases || []).map((c: any) => ({
+        patientName: c.patient_name || "",
+        description: c.description || "",
+        outcomeId: c.suggested_outcome || "",
+        outcomeExtra: "",
+        isNewClaim: c.is_new_claim || false,
+      }));
+
+      if (extracted.length === 0) {
+        toast.warning("Nessun caso paziente identificato nella trascrizione.");
+      } else {
+        setCases(extracted);
+        toast.success(`${extracted.length} pratiche estratte dalla trascrizione.`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Errore nell'estrazione dei casi.");
+    }
+    setExtracting(false);
+  };
+
+  const buildReportData = useCallback((): ReportData => {
+    const attendeeNames = selectedAttendees
+      .map((id) => speakers.find((s) => s.id === id))
+      .filter(Boolean)
+      .map((s) => displayName(s!));
+
+    return {
+      facilityName,
+      meetingDate,
+      attendees: attendeeNames,
+      cases,
+      startTime,
+      closingTime,
+      nextMeetingDate,
+      nextMeetingTime,
+    };
+  }, [facilityName, meetingDate, selectedAttendees, cases, startTime, closingTime, nextMeetingDate, nextMeetingTime, speakers]);
+
+  const handleExportDocx = async () => {
+    const data = buildReportData();
+    if (!data.facilityName || data.cases.length === 0) {
+      toast.error("Compila almeno la struttura e aggiungi delle pratiche.");
+      return;
+    }
+    try {
+      await exportVerbaleDocx(data);
+      toast.success("Verbale DOCX generato e scaricato.");
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Errore nella generazione DOCX.");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Section Title */}
+      <div className="flex items-center gap-2">
+        <FileText className="h-5 w-5 text-primary" />
+        <h2 className="text-xl font-bold">Genera Verbale</h2>
+      </div>
+
+      {/* Header */}
+      <VerbaleHeader
+        facilityName={facilityName}
+        onFacilityChange={setFacilityName}
+        meetingDate={meetingDate}
+        onMeetingDateChange={setMeetingDate}
+        startTime={startTime}
+        onStartTimeChange={setStartTime}
+        selectedAttendees={selectedAttendees}
+        onAttendeesChange={setSelectedAttendees}
+      />
+
+      {/* Agenda (auto) */}
+      <VerbaleAgenda cases={cases} />
+
+      {/* Cases */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase">Discussione Pratiche</h3>
+          <div className="flex gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleExtractCases}
+              disabled={extracting || segments.length === 0}
+              className="gap-1.5"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {extracting ? "Estrazione…" : "Popola Pratiche via AI"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={addCase} className="gap-1 text-xs">
+              <Plus className="h-3 w-3" /> Aggiungi Pratica
+            </Button>
+          </div>
+        </div>
+
+        {cases.length === 0 && (
+          <p className="text-sm text-muted-foreground italic py-4 text-center">
+            Nessuna pratica. Usa "Popola Pratiche via AI" oppure aggiungi manualmente.
+          </p>
+        )}
+
+        {cases.map((c, i) => (
+          <VerbaleCaseCard
+            key={i}
+            caseData={c}
+            index={i}
+            canRemove={cases.length > 0}
+            onChange={(field, value) => updateCase(i, field, value)}
+            onRemove={() => removeCase(i)}
+          />
+        ))}
+      </div>
+
+      {/* Footer */}
+      <VerbaleFooter
+        closingTime={closingTime}
+        onClosingTimeChange={setClosingTime}
+        nextMeetingDate={nextMeetingDate}
+        onNextMeetingDateChange={setNextMeetingDate}
+        nextMeetingTime={nextMeetingTime}
+        onNextMeetingTimeChange={setNextMeetingTime}
+      />
+
+      {/* Export */}
+      <Button onClick={handleExportDocx} className="w-full gap-2" size="lg">
+        <Download className="h-4 w-4" /> Genera Verbale (.docx)
+      </Button>
+    </div>
+  );
+}
