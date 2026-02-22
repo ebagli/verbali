@@ -54,6 +54,7 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
   const [nextMeetingTime, setNextMeetingTime] = useState("");
   const [extracting, setExtracting] = useState(false);
   const [savingVerbale, setSavingVerbale] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
   const loadedRef = useRef(false);
 
   // Load speakers + saved verbale state
@@ -201,14 +202,24 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
   }, [facilityName, meetingDate, selectedAttendees, cases, startTime, closingTime, nextMeetingDate, nextMeetingTime, speakers]);
 
   const handleExportDocx = async () => {
+    // Validate required fields
+    const errors: Record<string, boolean> = {};
+    const missingFields: string[] = [];
+    if (!facilityName.trim()) { errors.facilityName = true; missingFields.push("Struttura Sanitaria"); }
+    if (cases.length === 0) { errors.cases = true; missingFields.push("Pratiche (almeno una)"); }
+
+    if (missingFields.length > 0) {
+      setValidationErrors(errors);
+      toast.error(`Campi obbligatori mancanti: ${missingFields.join(", ")}`);
+      return;
+    }
+
+    setValidationErrors({});
+
     // Auto-save before export
     await saveVerbale();
 
     const data = buildReportData();
-    if (!data.facilityName || data.cases.length === 0) {
-      toast.error("Compila almeno la struttura e aggiungi delle pratiche.");
-      return;
-    }
     try {
       await exportVerbaleDocx(data);
       toast.success("Verbale DOCX generato e scaricato.");
@@ -241,13 +252,14 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
       {/* Header */}
       <VerbaleHeader
         facilityName={facilityName}
-        onFacilityChange={setFacilityName}
+        onFacilityChange={(v) => { setFacilityName(v); if (v.trim()) setValidationErrors(prev => ({ ...prev, facilityName: false })); }}
         meetingDate={meetingDate}
         onMeetingDateChange={setMeetingDate}
         startTime={startTime}
         onStartTimeChange={setStartTime}
         selectedAttendees={selectedAttendees}
         onAttendeesChange={setSelectedAttendees}
+        errors={validationErrors}
       />
 
       {/* Agenda (auto) */}

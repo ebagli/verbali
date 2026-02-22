@@ -20,6 +20,7 @@ interface Props {
   onStartTimeChange: (v: string) => void;
   selectedAttendees: string[];
   onAttendeesChange: (v: string[]) => void;
+  errors?: Record<string, boolean>;
 }
 
 export function VerbaleHeader({
@@ -27,6 +28,7 @@ export function VerbaleHeader({
   meetingDate, onMeetingDateChange,
   startTime, onStartTimeChange,
   selectedAttendees, onAttendeesChange,
+  errors = {},
 }: Props) {
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
 
@@ -59,8 +61,8 @@ export function VerbaleHeader({
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Struttura Sanitaria</label>
-            <Input value={facilityName} onChange={(e) => onFacilityChange(e.target.value)} placeholder="Es. Ospedale San Carlo" />
+            <label className="text-xs font-medium text-muted-foreground">Struttura Sanitaria *</label>
+            <Input value={facilityName} onChange={(e) => onFacilityChange(e.target.value)} placeholder="Es. Ospedale San Carlo" className={errors.facilityName ? "border-destructive ring-1 ring-destructive" : ""} />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Data Incontro</label>
