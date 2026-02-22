@@ -14,6 +14,8 @@ import { resolveDisplayName } from "./SpeakerMappingCard";
 interface TranscriptSegment {
   speaker: string;
   text: string;
+  start?: number;
+  end?: number;
 }
 
 interface Speaker {
@@ -37,9 +39,10 @@ interface Props {
   segments: TranscriptSegment[];
   speakerMapping: Record<string, string>;
   transcriptionId: string;
+  conversationDate: string;
 }
 
-export function VerbaleManager({ segments, speakerMapping, transcriptionId }: Props) {
+export function VerbaleManager({ segments, speakerMapping, transcriptionId, conversationDate }: Props) {
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [facilityName, setFacilityName] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
@@ -232,6 +235,36 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId }: Pr
         onStartTimeChange={setStartTime}
         selectedAttendees={selectedAttendees}
         onAttendeesChange={setSelectedAttendees}
+        onAutoPopulate={() => {
+          // Date from conversation
+          if (conversationDate && !meetingDate) setMeetingDate(conversationDate);
+
+          // Times from segment timestamps
+          if (segments.length > 0) {
+            const firstStart = segments.find((s) => s.start != null)?.start;
+            const allEnds = segments.filter((s) => s.end != null).map((s) => s.end!);
+            const lastEnd = allEnds.length > 0 ? Math.max(...allEnds) : undefined;
+
+            if (firstStart != null && !startTime) {
+              const h = Math.floor(firstStart / 3600);
+              const m = Math.floor((firstStart % 3600) / 60);
+              setStartTime(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+            }
+            if (lastEnd != null && !closingTime) {
+              const h = Math.floor(lastEnd / 3600);
+              const m = Math.floor((lastEnd % 3600) / 60);
+              setClosingTime(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+            }
+          }
+
+          // Attendees from speaker mapping
+          const mappedSpeakerIds = Object.values(speakerMapping).filter(Boolean);
+          if (mappedSpeakerIds.length > 0 && selectedAttendees.length === 0) {
+            setSelectedAttendees(mappedSpeakerIds);
+          }
+
+          toast.success("Campi popolati dalla trascrizione.");
+        }}
       />
 
       {/* Agenda (auto) */}

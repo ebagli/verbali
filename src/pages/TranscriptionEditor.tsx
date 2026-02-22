@@ -300,6 +300,7 @@ const TranscriptionEditor = () => {
           segments={segments}
           speakerMapping={speakerMapping}
           transcriptionId={id!}
+          conversationDate={conversationDate}
         />
       </main>
     </div>
