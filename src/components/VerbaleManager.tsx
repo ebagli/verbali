@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, Sparkles, Download, FileText } from "lucide-react";
+import { Plus, Sparkles, Download, FileText, Save } from "lucide-react";
 import { toast } from "sonner";
 import { VerbaleHeader } from "./VerbaleHeader";
 import { VerbaleAgenda } from "./VerbaleAgenda";
@@ -22,12 +22,24 @@ interface Speaker {
   title: string;
 }
 
+interface VerbaleState {
+  facilityName: string;
+  meetingDate: string;
+  startTime: string;
+  selectedAttendees: string[];
+  cases: ReportCase[];
+  closingTime: string;
+  nextMeetingDate: string;
+  nextMeetingTime: string;
+}
+
 interface Props {
   segments: TranscriptSegment[];
   speakerMapping: Record<string, string>;
+  transcriptionId: string;
 }
 
-export function VerbaleManager({ segments, speakerMapping }: Props) {
+export function VerbaleManager({ segments, speakerMapping, transcriptionId }: Props) {
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [facilityName, setFacilityName] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
@@ -38,14 +50,68 @@ export function VerbaleManager({ segments, speakerMapping }: Props) {
   const [nextMeetingDate, setNextMeetingDate] = useState("");
   const [nextMeetingTime, setNextMeetingTime] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [savingVerbale, setSavingVerbale] = useState(false);
+  const loadedRef = useRef(false);
 
+  // Load speakers + saved verbale state
   useEffect(() => {
     supabase
       .from("speakers")
       .select("id, full_name, title")
       .order("full_name")
       .then(({ data }) => { if (data) setSpeakers(data); });
-  }, []);
+
+    if (transcriptionId && !loadedRef.current) {
+      loadedRef.current = true;
+      supabase
+        .from("transcriptions")
+        .select("report_html")
+        .eq("id", transcriptionId)
+        .single()
+        .then(({ data }) => {
+          if (data?.report_html) {
+            try {
+              const saved: VerbaleState = JSON.parse(data.report_html);
+              if (saved.facilityName) setFacilityName(saved.facilityName);
+              if (saved.meetingDate) setMeetingDate(saved.meetingDate);
+              if (saved.startTime) setStartTime(saved.startTime);
+              if (saved.selectedAttendees) setSelectedAttendees(saved.selectedAttendees);
+              if (saved.cases) setCases(saved.cases);
+              if (saved.closingTime) setClosingTime(saved.closingTime);
+              if (saved.nextMeetingDate) setNextMeetingDate(saved.nextMeetingDate);
+              if (saved.nextMeetingTime) setNextMeetingTime(saved.nextMeetingTime);
+            } catch {
+              // not JSON, ignore legacy data
+            }
+          }
+        });
+    }
+  }, [transcriptionId]);
+
+  const getVerbaleState = useCallback((): VerbaleState => ({
+    facilityName,
+    meetingDate,
+    startTime,
+    selectedAttendees,
+    cases,
+    closingTime,
+    nextMeetingDate,
+    nextMeetingTime,
+  }), [facilityName, meetingDate, startTime, selectedAttendees, cases, closingTime, nextMeetingDate, nextMeetingTime]);
+
+  const saveVerbale = useCallback(async () => {
+    setSavingVerbale(true);
+    const { error } = await supabase
+      .from("transcriptions")
+      .update({ report_html: JSON.stringify(getVerbaleState()) } as any)
+      .eq("id", transcriptionId);
+    setSavingVerbale(false);
+    if (error) {
+      toast.error("Errore nel salvataggio del verbale.");
+    } else {
+      toast.success("Verbale salvato.");
+    }
+  }, [transcriptionId, getVerbaleState]);
 
   const displayName = (s: Speaker) =>
     s.title ? `${s.title} ${s.full_name}` : s.full_name;
@@ -67,6 +133,9 @@ export function VerbaleManager({ segments, speakerMapping }: Props) {
       toast.error("Nessun segmento di trascrizione disponibile.");
       return;
     }
+    // Auto-save current state before extraction
+    await saveVerbale();
+
     setExtracting(true);
     try {
       const fullText = segments
@@ -123,6 +192,9 @@ export function VerbaleManager({ segments, speakerMapping }: Props) {
   }, [facilityName, meetingDate, selectedAttendees, cases, startTime, closingTime, nextMeetingDate, nextMeetingTime, speakers]);
 
   const handleExportDocx = async () => {
+    // Auto-save before export
+    await saveVerbale();
+
     const data = buildReportData();
     if (!data.facilityName || data.cases.length === 0) {
       toast.error("Compila almeno la struttura e aggiungi delle pratiche.");
@@ -140,9 +212,14 @@ export function VerbaleManager({ segments, speakerMapping }: Props) {
   return (
     <div className="space-y-4">
       {/* Section Title */}
-      <div className="flex items-center gap-2">
-        <FileText className="h-5 w-5 text-primary" />
-        <h2 className="text-xl font-bold">Genera Verbale</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-bold">Genera Verbale</h2>
+        </div>
+        <Button variant="secondary" size="sm" onClick={saveVerbale} disabled={savingVerbale} className="gap-1.5">
+          <Save className="h-3.5 w-3.5" /> {savingVerbale ? "Salvataggio…" : "Salva Verbale"}
+        </Button>
       </div>
 
       {/* Header */}

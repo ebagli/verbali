@@ -299,6 +299,7 @@ const TranscriptionEditor = () => {
         <VerbaleManager
           segments={segments}
           speakerMapping={speakerMapping}
+          transcriptionId={id!}
         />
       </main>
     </div>
