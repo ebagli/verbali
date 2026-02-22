@@ -236,34 +236,16 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         selectedAttendees={selectedAttendees}
         onAttendeesChange={setSelectedAttendees}
         onAutoPopulate={() => {
-          // Date from conversation
-          if (conversationDate && !meetingDate) setMeetingDate(conversationDate);
+          // Date from conversation date
+          if (conversationDate) setMeetingDate(conversationDate);
 
-          // Times from segment timestamps
-          if (segments.length > 0) {
-            const firstStart = segments.find((s) => s.start != null)?.start;
-            const allEnds = segments.filter((s) => s.end != null).map((s) => s.end!);
-            const lastEnd = allEnds.length > 0 ? Math.max(...allEnds) : undefined;
-
-            if (firstStart != null && !startTime) {
-              const h = Math.floor(firstStart / 3600);
-              const m = Math.floor((firstStart % 3600) / 60);
-              setStartTime(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-            }
-            if (lastEnd != null && !closingTime) {
-              const h = Math.floor(lastEnd / 3600);
-              const m = Math.floor((lastEnd % 3600) / 60);
-              setClosingTime(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-            }
-          }
-
-          // Attendees from speaker mapping
+          // Attendees from speaker mapping — select all mapped speakers
           const mappedSpeakerIds = Object.values(speakerMapping).filter(Boolean);
-          if (mappedSpeakerIds.length > 0 && selectedAttendees.length === 0) {
+          if (mappedSpeakerIds.length > 0) {
             setSelectedAttendees(mappedSpeakerIds);
           }
 
-          toast.success("Campi popolati dalla trascrizione.");
+          toast.success("Data e partecipanti popolati dalla trascrizione.");
         }}
       />
 
