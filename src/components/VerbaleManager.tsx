@@ -131,15 +131,20 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
     setCases((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  const handleExtractCases = async () => {
+  const handlePopulateAll = async () => {
     if (segments.length === 0) {
       toast.error("Nessun segmento di trascrizione disponibile.");
       return;
     }
-    // Auto-save current state before extraction
-    await saveVerbale();
 
     setExtracting(true);
+
+    // 1. Auto-populate header fields
+    if (conversationDate) setMeetingDate(conversationDate);
+    const mappedSpeakerIds = Object.values(speakerMapping).filter(Boolean);
+    if (mappedSpeakerIds.length > 0) setSelectedAttendees(mappedSpeakerIds);
+
+    // 2. Extract cases via AI
     try {
       const fullText = segments
         .map((s) => {
@@ -164,11 +169,12 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
       }));
 
       if (extracted.length === 0) {
-        toast.warning("Nessun caso paziente identificato nella trascrizione.");
+        toast.warning("Nessun caso paziente identificato.");
       } else {
         setCases(extracted);
-        toast.success(`${extracted.length} pratiche estratte dalla trascrizione.`);
       }
+
+      toast.success("Verbale popolato dalla trascrizione.");
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Errore nell'estrazione dei casi.");
@@ -214,10 +220,22 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
 
   return (
     <div className="space-y-4">
-      {/* Section Title */}
-      <div className="flex items-center gap-2">
-        <FileText className="h-5 w-5 text-primary" />
-        <h2 className="text-xl font-bold">Genera Verbale</h2>
+      {/* Section Title + Populate All */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-bold">Genera Verbale</h2>
+        </div>
+        <Button
+          variant="default"
+          size="sm"
+          onClick={handlePopulateAll}
+          disabled={extracting || segments.length === 0}
+          className="gap-1.5"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          {extracting ? "Popolamento…" : "Popola tutto con AI"}
+        </Button>
       </div>
 
       {/* Header */}
@@ -230,18 +248,6 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         onStartTimeChange={setStartTime}
         selectedAttendees={selectedAttendees}
         onAttendeesChange={setSelectedAttendees}
-        onAutoPopulate={() => {
-          // Date from conversation date
-          if (conversationDate) setMeetingDate(conversationDate);
-
-          // Attendees from speaker mapping — select all mapped speakers
-          const mappedSpeakerIds = Object.values(speakerMapping).filter(Boolean);
-          if (mappedSpeakerIds.length > 0) {
-            setSelectedAttendees(mappedSpeakerIds);
-          }
-
-          toast.success("Data e partecipanti popolati dalla trascrizione.");
-        }}
       />
 
       {/* Agenda (auto) */}
@@ -251,21 +257,9 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase">Discussione Pratiche</h3>
-          <div className="flex gap-2">
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleExtractCases}
-              disabled={extracting || segments.length === 0}
-              className="gap-1.5"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {extracting ? "Estrazione…" : "Popola Pratiche via AI"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={addCase} className="gap-1 text-xs">
-              <Plus className="h-3 w-3" /> Aggiungi Pratica
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={addCase} className="gap-1 text-xs">
+            <Plus className="h-3 w-3" /> Aggiungi Pratica
+          </Button>
         </div>
 
         {cases.length === 0 && (

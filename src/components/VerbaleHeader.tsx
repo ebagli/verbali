@@ -20,7 +20,6 @@ interface Props {
   onStartTimeChange: (v: string) => void;
   selectedAttendees: string[];
   onAttendeesChange: (v: string[]) => void;
-  onAutoPopulate?: () => void;
 }
 
 export function VerbaleHeader({
@@ -28,7 +27,6 @@ export function VerbaleHeader({
   meetingDate, onMeetingDateChange,
   startTime, onStartTimeChange,
   selectedAttendees, onAttendeesChange,
-  onAutoPopulate,
 }: Props) {
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
 
@@ -53,15 +51,10 @@ export function VerbaleHeader({
 
   return (
     <Card>
-      <CardHeader className="pb-3 flex flex-row items-center justify-between">
+      <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center gap-2">
           <Building2 className="h-4 w-4" /> Intestazione
         </CardTitle>
-        {onAutoPopulate && (
-          <Button variant="outline" size="sm" onClick={onAutoPopulate} className="gap-1.5 text-xs">
-            <Wand2 className="h-3.5 w-3.5" /> Popola da Trascrizione
-          </Button>
-        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
