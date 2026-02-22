@@ -77,18 +77,23 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       if (!response.ok) throw new Error("Transcription failed");
       const result = await response.json();
 
+      // Log raw response for debugging
+      console.log("ElevenLabs raw response:", JSON.stringify(result, null, 2));
+
       // Build segments from ElevenLabs response
-      const segments = (result.words || []).reduce((acc: any[], word: any) => {
-        const speaker = word.speaker || "Speaker 1";
-        const last = acc[acc.length - 1];
-        if (last && last.speaker === speaker) {
-          last.text += " " + word.text;
-          last.end = word.end;
-        } else {
-          acc.push({ speaker, text: word.text, start: word.start, end: word.end });
-        }
-        return acc;
-      }, []);
+      const segments = (result.words || [])
+        .filter((word: any) => word.type === "word")
+        .reduce((acc: any[], word: any) => {
+          const speaker = word.speaker_id || "speaker_0";
+          const last = acc[acc.length - 1];
+          if (last && last.speaker === speaker) {
+            last.text += " " + word.text;
+            last.end = word.end;
+          } else {
+            acc.push({ speaker, text: word.text, start: word.start, end: word.end });
+          }
+          return acc;
+        }, []);
 
       // If no word-level data, use full text
       const finalSegments = segments.length > 0
