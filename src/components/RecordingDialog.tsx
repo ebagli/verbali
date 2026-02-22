@@ -43,7 +43,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       mediaRecorder.start(1000);
       setRecording(true);
     } catch {
-      toast.error("Microphone access denied");
+      toast.error("Accesso al microfono negato");
     }
   }, []);
 
@@ -57,7 +57,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
-        toast.error("You must be signed in");
+        toast.error("Devi effettuare l'accesso");
         setProcessing(false);
         return;
       }
@@ -77,7 +77,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
         }
       );
 
-      if (!response.ok) throw new Error("Transcription failed");
+      if (!response.ok) throw new Error("Trascrizione fallita");
       const result = await response.json();
 
       // Log raw response for debugging
@@ -116,11 +116,11 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
 
       if (error) throw error;
 
-      toast.success("Transcription saved!");
+      toast.success("Trascrizione salvata!");
       onComplete();
       navigate(`/transcription/${data.id}`);
     } catch (err: any) {
-      toast.error(err.message || "Processing failed");
+      toast.error(err.message || "Elaborazione fallita");
     }
     setProcessing(false);
   };
@@ -129,9 +129,9 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Record Audio</DialogTitle>
+          <DialogTitle>Registra Audio</DialogTitle>
         <DialogDescription>
-            Record a conversation or upload an audio file to transcribe.
+            Registra una conversazione o carica un file audio da trascrivere.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center gap-6 py-8">
@@ -153,7 +153,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
                 {recording ? <Square className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
               </button>
               <p className="text-sm text-muted-foreground">
-                {recording ? "Recording… Click to stop" : "Click to start recording"}
+                {recording ? "Registrazione in corso… Clicca per fermare" : "Clicca per iniziare a registrare"}
               </p>
 
               <div className="w-full border-t pt-4 flex flex-col items-center gap-2">
