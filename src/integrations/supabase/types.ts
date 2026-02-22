@@ -52,11 +52,37 @@ export type Database = {
           },
         ]
       }
+      speakers: {
+        Row: {
+          created_at: string
+          full_name: string
+          id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          full_name: string
+          id?: string
+          title?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string
+          id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transcriptions: {
         Row: {
           conversation_date: string
           created_at: string
           id: string
+          report_html: string | null
+          speaker_mapping: Json | null
           summary: string | null
           transcript_json: Json
           user_id: string
@@ -65,6 +91,8 @@ export type Database = {
           conversation_date?: string
           created_at?: string
           id?: string
+          report_html?: string | null
+          speaker_mapping?: Json | null
           summary?: string | null
           transcript_json?: Json
           user_id: string
@@ -73,6 +101,8 @@ export type Database = {
           conversation_date?: string
           created_at?: string
           id?: string
+          report_html?: string | null
+          speaker_mapping?: Json | null
           summary?: string | null
           transcript_json?: Json
           user_id?: string

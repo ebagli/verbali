@@ -27,7 +27,7 @@ serve(async (req) => {
     apiFormData.append("model_id", "scribe_v2");
     apiFormData.append("diarize", "true");
     apiFormData.append("tag_audio_events", "true");
-    apiFormData.append("language_code", "it"")
+    apiFormData.append("language_code", "it");
 
     const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method: "POST",
