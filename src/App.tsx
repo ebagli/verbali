@@ -7,6 +7,7 @@ import { AuthGuard } from "@/components/AuthGuard";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import TranscriptionEditor from "./pages/TranscriptionEditor";
+import Speakers from "./pages/Speakers";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/" element={<AuthGuard><Index /></AuthGuard>} />
           <Route path="/transcription/:id" element={<AuthGuard><TranscriptionEditor /></AuthGuard>} />
+          <Route path="/speakers" element={<AuthGuard><Speakers /></AuthGuard>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

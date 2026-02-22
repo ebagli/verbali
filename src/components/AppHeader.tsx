@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Mic, LogOut } from "lucide-react";
+import { Mic, LogOut, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export function AppHeader() {
@@ -24,6 +24,10 @@ export function AppHeader() {
           </div>
           <span>Transcription Hub</span>
         </button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/speakers")} className="gap-1.5 text-sm">
+            <Users className="h-4 w-4" /> Partecipanti
+          </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="rounded-full">
@@ -43,6 +47,7 @@ export function AppHeader() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
     </header>
   );
