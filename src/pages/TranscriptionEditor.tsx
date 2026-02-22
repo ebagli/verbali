@@ -49,7 +49,7 @@ const TranscriptionEditor = () => {
     setLoading(true);
     const { data: t, error } = await supabase.from("transcriptions").select("*").eq("id", id!).single();
     if (error || !t) {
-      toast.error("Transcription not found");
+      toast.error("Trascrizione non trovata");
       navigate("/");
       return;
     }
@@ -71,7 +71,7 @@ const TranscriptionEditor = () => {
         speaker_mapping: speakerMapping,
       } as any)
       .eq("id", id!);
-    if (error) toast.error("Failed to save");
+    if (error) toast.error("Errore nel salvataggio");
     else toast.success("Salvato con successo");
     setSaving(false);
   };

@@ -24,9 +24,9 @@ const Auth = () => {
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
             <Mic className="h-8 w-8 text-primary" />
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">Transcription Hub</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">Verbali</CardTitle>
           <CardDescription className="text-base">
-            GDPR-compliant transcription &amp; analysis platform
+            Piattaforma di trascrizione e generazione verbali
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -41,11 +41,11 @@ const Auth = () => {
               <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
               <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
-            Sign in with Google
+            Accedi con Google
           </Button>
           <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
             <Shield className="h-3.5 w-3.5" />
-            <span>EU-hosted · GDPR compliant · Data encrypted at rest</span>
+            <span>Hosting EU · Conforme GDPR · Dati crittografati</span>
           </div>
         </CardContent>
       </Card>

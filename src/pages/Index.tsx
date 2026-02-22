@@ -69,21 +69,21 @@ const Index = () => {
       <main className="container py-8 space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Transcriptions</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Trascrizioni</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {transcriptions.length} recording{transcriptions.length !== 1 ? "s" : ""}
+              {transcriptions.length} registrazion{transcriptions.length !== 1 ? "i" : "e"}
             </p>
           </div>
           <Button onClick={() => setShowRecording(true)} className="gap-2">
             <Mic className="h-4 w-4" />
-            New Recording
+            Nuova Registrazione
           </Button>
         </div>
 
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search transcriptions…"
+            placeholder="Cerca trascrizioni…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -97,8 +97,8 @@ const Index = () => {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <FileText className="h-12 w-12 text-muted-foreground/40 mb-4" />
-            <p className="text-lg font-medium text-muted-foreground">No transcriptions yet</p>
-            <p className="text-sm text-muted-foreground/70 mt-1">Record your first conversation to get started</p>
+            <p className="text-lg font-medium text-muted-foreground">Nessuna trascrizione</p>
+            <p className="text-sm text-muted-foreground/70 mt-1">Registra la tua prima conversazione per iniziare</p>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -116,7 +116,7 @@ const Index = () => {
                         {new Date(t.conversation_date).toLocaleDateString()}
                       </span>
                       <Badge variant="secondary" className="text-xs">
-                        {getSpeakerCount(t)} speaker{getSpeakerCount(t) !== 1 ? "s" : ""}
+                        {getSpeakerCount(t)} partecipant{getSpeakerCount(t) !== 1 ? "i" : "e"}
                       </Badge>
                     </div>
                     <p className="text-sm text-foreground/80 line-clamp-2">{getPreview(t)}</p>

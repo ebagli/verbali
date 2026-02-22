@@ -22,7 +22,7 @@ export function AppHeader() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <Mic className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span>Transcription Hub</span>
+          <span>Verbali</span>
         </button>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => navigate("/speakers")} className="gap-1.5 text-sm">
@@ -43,7 +43,7 @@ export function AppHeader() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
-              Sign out
+              Esci
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
