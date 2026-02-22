@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,8 +12,50 @@ serve(async (req) => {
   }
 
   try {
+    // Authentication check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: authError } = await supabaseClient.auth.getClaims(token);
+    if (authError || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { transcript_text } = await req.json();
     if (!transcript_text) throw new Error("No transcript_text provided");
+
+    // Input validation
+    if (typeof transcript_text !== "string") {
+      return new Response(JSON.stringify({ error: "Invalid input: transcript_text must be a string" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const maxLength = 200000;
+    if (transcript_text.length > maxLength) {
+      return new Response(JSON.stringify({ error: `Text too long. Maximum length is ${maxLength} characters.` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const sanitized = transcript_text.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "");
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("AI gateway not configured");
@@ -38,7 +81,7 @@ Per ogni paziente identificato, estrai:
 
 NON inventare informazioni. Estrai solo ciò che è esplicitamente discusso nella trascrizione.`,
           },
-          { role: "user", content: transcript_text },
+          { role: "user", content: sanitized },
         ],
         tools: [
           {
