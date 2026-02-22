@@ -11,9 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, AlertTriangle, Trash2, Plus, X } from "lucide-react";
+import { ArrowLeft, Save, AlertTriangle, Trash2, Plus, X, Download } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbaleManager } from "@/components/VerbaleManager";
+import { exportTranscriptDocx } from "@/lib/docx-export";
 
 interface TranscriptSegment {
   speaker: string;
@@ -236,9 +237,20 @@ const TranscriptionEditor = () => {
             <Card>
               <CardHeader className="pb-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Trascrizione</CardTitle>
-                <Button variant="outline" size="sm" onClick={() => addSegment()} className="gap-1.5">
-                  <Plus className="h-3.5 w-3.5" /> Aggiungi Segmento
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportTranscriptDocx(segments, speakerMapping, speakers, conversationDate, resolveDisplayName)}
+                    className="gap-1.5"
+                    disabled={segments.length === 0}
+                  >
+                    <Download className="h-3.5 w-3.5" /> DOCX
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => addSegment()} className="gap-1.5">
+                    <Plus className="h-3.5 w-3.5" /> Aggiungi
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {segments.length === 0 ? (

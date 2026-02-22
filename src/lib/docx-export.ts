@@ -5,6 +5,58 @@ import {
 import { saveAs } from "file-saver";
 import { type ReportData, getOutcomeText } from "./report-template";
 
+interface TranscriptSegment {
+  speaker: string;
+  text: string;
+  start?: number;
+  end?: number;
+}
+
+export async function exportTranscriptDocx(
+  segments: TranscriptSegment[],
+  speakerMapping: Record<string, string>,
+  speakers: { id: string; full_name: string; title: string }[],
+  conversationDate: string,
+  resolveDisplayName: (label: string, mapping: Record<string, string>, speakers: { id: string; full_name: string; title: string }[]) => string,
+) {
+  const children: Paragraph[] = [];
+
+  const dateFormatted = conversationDate
+    ? new Date(conversationDate).toLocaleDateString("it-IT", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+    : "";
+
+  children.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 200 },
+      children: [new TextRun({ text: `Trascrizione del ${dateFormatted}`, bold: true, size: 28, font: "Times New Roman" })],
+    })
+  );
+
+  children.push(new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "999999" } }, spacing: { after: 200, before: 100 } }));
+
+  segments.forEach((seg) => {
+    const name = resolveDisplayName(seg.speaker, speakerMapping, speakers);
+    children.push(
+      new Paragraph({
+        spacing: { after: 120 },
+        children: [
+          new TextRun({ text: `${name}: `, bold: true, size: 22, font: "Times New Roman" }),
+          new TextRun({ text: seg.text, size: 22, font: "Times New Roman" }),
+        ],
+      })
+    );
+  });
+
+  const doc = new Document({
+    sections: [{ properties: { type: SectionType.CONTINUOUS }, children }],
+  });
+  const blob = await Packer.toBlob(doc);
+  const dateStr = conversationDate || new Date().toISOString().slice(0, 10);
+  saveAs(blob, `Trascrizione_${dateStr}.docx`);
+}
+
 function hr(): Paragraph {
   return new Paragraph({
     border: {
