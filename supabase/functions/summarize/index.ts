@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,8 +12,50 @@ serve(async (req) => {
   }
 
   try {
+    // Authentication check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: authError } = await supabaseClient.auth.getClaims(token);
+    if (authError || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { text } = await req.json();
     if (!text) throw new Error("No text provided");
+
+    // Input validation
+    if (typeof text !== "string") {
+      return new Response(JSON.stringify({ error: "Invalid input: text must be a string" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const maxLength = 100000;
+    if (text.length > maxLength) {
+      return new Response(JSON.stringify({ error: `Text too long. Maximum length is ${maxLength} characters.` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const sanitized = text.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "");
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("AI gateway not configured");
@@ -31,7 +74,7 @@ serve(async (req) => {
             content:
               "Sei un segretario professionista di un Comitato Valutazione Sinistri in ambito sanitario. Analizza la trascrizione della riunione e produci un riepilogo strutturato in italiano formale con tono medico-legale. Includi: 1) Punti chiave discussi per ogni pratica/paziente, 2) Stato clinico/legale emerso (es. ATP, CTU, perizie), 3) Determinazioni prese, 4) Azioni da intraprendere. Mantieni il riepilogo sotto le 400 parole. Non usare frasi come 'Speaker X ha detto...'. Usa uno stile formale e impersonale.",
           },
-          { role: "user", content: text },
+          { role: "user", content: sanitized },
         ],
       }),
     });
