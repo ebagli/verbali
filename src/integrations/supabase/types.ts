@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      authorized_users: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+        }
+        Relationships: []
+      }
       problematic_cases: {
         Row: {
           created_at: string
@@ -114,6 +132,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      is_authorized_user: { Args: { _user_id: string }; Returns: boolean }
       user_owns_transcription: { Args: { t_id: string }; Returns: boolean }
     }
     Enums: {

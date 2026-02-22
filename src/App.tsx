@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthGuard } from "@/components/AuthGuard";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import AccessDenied from "./pages/AccessDenied";
 import TranscriptionEditor from "./pages/TranscriptionEditor";
 import Speakers from "./pages/Speakers";
 import NotFound from "./pages/NotFound";
@@ -20,6 +21,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/access-denied" element={<AccessDenied />} />
           <Route path="/" element={<AuthGuard><Index /></AuthGuard>} />
           <Route path="/transcription/:id" element={<AuthGuard><TranscriptionEditor /></AuthGuard>} />
           <Route path="/speakers" element={<AuthGuard><Speakers /></AuthGuard>} />
