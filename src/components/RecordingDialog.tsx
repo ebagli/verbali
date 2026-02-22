@@ -51,6 +51,10 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   }, []);
 
   const processAudio = async (blob: Blob) => {
+    if (!user) {
+      toast.error("You must be signed in");
+      return;
+    }
     setProcessing(true);
     try {
       const formData = new FormData();
