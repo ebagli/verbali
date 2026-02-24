@@ -1,5 +1,6 @@
 const ALLOWED_ORIGINS = [
   "https://id-preview--bc32b571-55a0-431e-8be3-f79b09d6c5da.lovable.app",
+  "https://bc32b571-55a0-431e-8be3-f79b09d6c5da.lovableproject.com",
   "https://ysufsxcwfumqqssjljmt.supabase.co",
   "http://localhost:5173",
   "http://localhost:8080",
