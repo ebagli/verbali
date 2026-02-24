@@ -1,15 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const preflight = handleCorsPreFlight(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
     // Authentication check
@@ -39,7 +36,6 @@ serve(async (req) => {
     const { transcript_text } = await req.json();
     if (!transcript_text) throw new Error("No transcript_text provided");
 
-    // Input validation
     if (typeof transcript_text !== "string") {
       return new Response(JSON.stringify({ error: "Invalid input: transcript_text must be a string" }), {
         status: 400,
@@ -147,7 +143,8 @@ NON inventare informazioni. Estrai solo ciò che è esplicitamente discusso nell
     });
   } catch (error: any) {
     console.error("extract-cases error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    const corsHeaders = getCorsHeaders(req);
+    return new Response(JSON.stringify({ error: "Errore interno del server." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
