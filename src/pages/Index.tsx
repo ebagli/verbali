@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -33,11 +33,12 @@ const Index = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    const { data: t } = await supabase
-      .from("transcriptions")
-      .select("*")
-      .order("conversation_date", { ascending: false });
-    setTranscriptions((t as Transcription[]) || []);
+    try {
+      const data = await api.transcriptions.list();
+      setTranscriptions(data || []);
+    } catch (error) {
+      console.error("Error fetching transcriptions:", error);
+    }
     setLoading(false);
   };
 
