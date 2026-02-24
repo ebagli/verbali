@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import type { User, Session } from "@supabase/supabase-js";
 
 export function useAuth() {
@@ -24,10 +23,24 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  };
+
+  const signUp = async (email: string, password: string) => {
+    // Check whitelist first
+    const { data, error: checkError } = await supabase
+      .from("authorized_users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (checkError || !data) {
+      throw new Error("Questo indirizzo email non è autorizzato. Contatta l'amministratore.");
+    }
+
+    const { error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
   };
 
@@ -36,5 +49,5 @@ export function useAuth() {
     if (error) throw error;
   };
 
-  return { user, session, loading, signInWithGoogle, signOut };
+  return { user, session, loading, signIn, signUp, signOut };
 }
