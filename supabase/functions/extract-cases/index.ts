@@ -53,21 +53,10 @@ serve(async (req) => {
 
     const sanitized = transcript_text.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "");
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("AI gateway not configured");
+    const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
+    if (!GOOGLE_GEMINI_API_KEY) throw new Error("Google Gemini API key not configured");
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          {
-            role: "system",
-            content: `Sei un assistente legale specializzato in sinistri sanitari. Analizza la trascrizione di un Comitato Valutazione Sinistri e identifica ogni pratica/paziente discusso.
+    const systemPrompt = `Sei un assistente legale specializzato in sinistri sanitari. Analizza la trascrizione di un Comitato Valutazione Sinistri e identifica ogni pratica/paziente discusso.
 
 Per ogni paziente identificato, estrai:
 - patient_name: COGNOME NOME in maiuscolo
@@ -75,43 +64,32 @@ Per ogni paziente identificato, estrai:
 - is_new_claim: true se sembra una nuova richiesta di risarcimento, false se è un caso in corso
 - suggested_outcome: uno tra "istruttoria", "riserva", "prematuro", "sviluppi", "archiviazione", "proposta_transattiva" oppure "" se non chiaro
 
-NON inventare informazioni. Estrai solo ciò che è esplicitamente discusso nella trascrizione.`,
-          },
-          { role: "user", content: sanitized },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_cases",
-              description: "Extract patient cases from the committee transcript",
-              parameters: {
-                type: "object",
-                properties: {
-                  cases: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        patient_name: { type: "string" },
-                        description: { type: "string" },
-                        is_new_claim: { type: "boolean" },
-                        suggested_outcome: { type: "string" },
-                      },
-                      required: ["patient_name", "description", "is_new_claim", "suggested_outcome"],
-                      additionalProperties: false,
-                    },
-                  },
+NON inventare informazioni. Estrai solo ciò che è esplicitamente discusso nella trascrizione.
+
+Rispondi SOLO con un JSON valido nel formato: {"cases": [{"patient_name": "...", "description": "...", "is_new_claim": true/false, "suggested_outcome": "..."}]}`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `${systemPrompt}\n\nTrascrizione:\n${sanitized}`,
                 },
-                required: ["cases"],
-                additionalProperties: false,
-              },
+              ],
             },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
           },
-        ],
-        tool_choice: { type: "function", function: { name: "extract_cases" } },
-      }),
-    });
+        }),
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -120,23 +98,17 @@ NON inventare informazioni. Estrai solo ciò che è esplicitamente discusso nell
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Crediti AI esauriti." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
       const errText = await response.text();
-      throw new Error(`AI gateway error: ${response.status} - ${errText}`);
+      throw new Error(`Google Gemini API error: ${response.status} - ${errText}`);
     }
 
     const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) {
-      throw new Error("No tool call returned from AI");
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      throw new Error("No response from Google Gemini");
     }
 
-    const args = JSON.parse(toolCall.function.arguments);
+    const args = JSON.parse(text);
 
     return new Response(JSON.stringify(args), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
