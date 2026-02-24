@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 
 // Simple in-memory rate limiter
@@ -16,6 +15,38 @@ function checkRateLimit(key: string): boolean {
   }
   entry.count++;
   return entry.count <= MAX_ATTEMPTS;
+}
+
+// Password hashing using Web Crypto API (Deno-native, no external deps)
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]
+  );
+  const hash = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial, 256
+  );
+  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, "0")).join("");
+  const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return `pbkdf2:${saltHex}:${hashHex}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (!stored.startsWith("pbkdf2:")) return false;
+  const [, saltHex, hashHex] = stored.split(":");
+  const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]
+  );
+  const hash = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial, 256
+  );
+  const computedHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return computedHex === hashHex;
 }
 
 Deno.serve(async (req) => {
@@ -66,18 +97,18 @@ Deno.serve(async (req) => {
       return genericError;
     }
 
-    // Check password: support bcrypt hashes and legacy plaintext migration
+    // Check password: support hashed and legacy plaintext migration
     let passwordValid = false;
     const storedHash = authorized.password_hash;
 
-    if (storedHash.startsWith("$2")) {
-      // Already a bcrypt hash
-      passwordValid = await bcrypt.compare(password, storedHash);
+    if (storedHash.startsWith("pbkdf2:")) {
+      // Already hashed
+      passwordValid = await verifyPassword(password, storedHash);
     } else {
-      // Legacy plaintext — verify and upgrade to bcrypt
+      // Legacy plaintext — verify and upgrade to hash
       if (storedHash === password) {
         passwordValid = true;
-        const newHash = await bcrypt.hash(password);
+        const newHash = await hashPassword(password);
         await supabaseAdmin
           .from("authorized_users")
           .update({ password_hash: newHash })
@@ -100,6 +131,7 @@ Deno.serve(async (req) => {
         email_confirm: true,
       });
       if (createError) {
+        console.error("Create user error:", createError.message);
         return new Response(
           JSON.stringify({ error: "Errore interno del server." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -114,6 +146,7 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
+    console.error("Login error:", err);
     const corsHeaders = getCorsHeaders(req);
     return new Response(
       JSON.stringify({ error: "Errore interno del server." }),
