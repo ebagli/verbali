@@ -9,9 +9,8 @@ import { Mic, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const Auth = () => {
-  const { user, loading, signIn, signUp } = useAuth();
+  const { user, loading, signIn } = useAuth();
   const { toast } = useToast();
-  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -30,16 +29,11 @@ const Auth = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      if (isSignUp) {
-        await signUp(email, password);
-        toast({ title: "Account creato", description: "Accesso effettuato con successo." });
-      } else {
-        await signIn(email, password);
-      }
+      await signIn(email, password);
     } catch (err: any) {
       toast({
         title: "Errore",
-        description: err.message || "Si è verificato un errore.",
+        description: err.message || "Credenziali non valide.",
         variant: "destructive",
       });
     } finally {
@@ -56,7 +50,7 @@ const Auth = () => {
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight">Verbali</CardTitle>
           <CardDescription className="text-base">
-            {isSignUp ? "Crea il tuo account" : "Accedi alla piattaforma"}
+            Accedi alla piattaforma
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -85,18 +79,9 @@ const Auth = () => {
               />
             </div>
             <Button type="submit" className="w-full h-12 text-base font-medium" size="lg" disabled={submitting}>
-              {submitting ? "Caricamento..." : isSignUp ? "Registrati" : "Accedi"}
+              {submitting ? "Caricamento..." : "Accedi"}
             </Button>
           </form>
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-            >
-              {isSignUp ? "Hai già un account? Accedi" : "Non hai un account? Registrati"}
-            </button>
-          </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center mt-6">
             <Shield className="h-3.5 w-3.5" />
             <span>Hosting EU · Conforme GDPR · Dati crittografati</span>
