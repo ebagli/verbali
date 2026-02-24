@@ -82,10 +82,6 @@ const Auth = () => {
               {submitting ? "Caricamento..." : "Accedi"}
             </Button>
           </form>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center mt-6">
-            <Shield className="h-3.5 w-3.5" />
-            <span>Hosting EU · Conforme GDPR · Dati crittografati</span>
-          </div>
         </CardContent>
       </Card>
     </div>
