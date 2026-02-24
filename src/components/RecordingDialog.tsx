@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Mic, Square, Loader2, Upload } from "lucide-react";
@@ -63,10 +63,28 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
 
       const audioFile = blob instanceof File ? blob : new File([blob], "recording.webm", { type: "audio/webm" });
 
-      const result = await api.ai.transcribe(audioFile);
+      // Call transcribe edge function
+      const formData = new FormData();
+      formData.append("audio", audioFile);
 
-      // Log raw response for debugging
-      console.log("ElevenLabs raw response:", JSON.stringify(result, null, 2));
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Transcription failed" }));
+        throw new Error(err.error || "Transcription failed");
+      }
+
+      const result = await response.json();
 
       // Build segments from ElevenLabs response
       const segments = (result.words || [])
@@ -83,16 +101,22 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
           return acc;
         }, []);
 
-      // If no word-level data, use full text
       const finalSegments = segments.length > 0
         ? segments
         : [{ speaker: "Speaker 1", text: result.text || "", start: 0, end: 0 }];
 
-      // Save to database
-      const data = await api.transcriptions.create({
-        transcript_json: finalSegments,
-        conversation_date: new Date().toISOString().split("T")[0],
-      });
+      // Save to database via Supabase
+      const { data, error } = await supabase
+        .from("transcriptions")
+        .insert({
+          user_id: user.id,
+          transcript_json: finalSegments as any,
+          conversation_date: new Date().toISOString().split("T")[0],
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
 
       toast.success("Trascrizione salvata!");
       onComplete();
