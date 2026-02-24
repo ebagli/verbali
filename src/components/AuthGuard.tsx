@@ -14,11 +14,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     const checkAuthorization = async () => {
-      const { data, error } = await supabase
-        .from("authorized_users")
-        .select("id")
-        .eq("email", user.email ?? "")
-        .maybeSingle();
+      // Use the server-side RPC function instead of querying authorized_users directly
+      const { data, error } = await supabase.rpc("is_authorized_user", {
+        _user_id: user.id,
+      });
 
       if (error || !data) {
         await supabase.auth.signOut();
