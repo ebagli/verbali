@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Mic, FileText, Database, Settings, Check, Cloud, HardDrive } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { getGeminiApiKey, setGeminiApiKey } from "@/lib/gemini";
 import { getBackendMode, setBackendMode, getLocalApiUrl, setLocalApiUrl, type BackendMode } from "@/lib/db-backend";
@@ -97,22 +96,29 @@ export function AppLayout({ children }: Props) {
             <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               Backend
             </label>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                {backendMode === "cloud" ? (
-                  <Cloud className="h-3.5 w-3.5 text-primary" />
-                ) : (
-                  <HardDrive className="h-3.5 w-3.5 text-orange-500" />
-                )}
-                <span className="text-xs font-medium">
-                  {backendMode === "cloud" ? "Cloud" : "Locale"}
-                </span>
-              </div>
-              <Switch
-                checked={backendMode === "local"}
-                onCheckedChange={toggleBackend}
-                className="scale-75"
-              />
+            <div className="flex rounded-lg border border-border overflow-hidden h-8">
+              <button
+                onClick={() => { if (backendMode !== "cloud") toggleBackend(false); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium transition-colors ${
+                  backendMode === "cloud"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <Cloud className="h-3 w-3" />
+                Cloud
+              </button>
+              <button
+                onClick={() => { if (backendMode !== "local") toggleBackend(true); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium transition-colors ${
+                  backendMode === "local"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <HardDrive className="h-3 w-3" />
+                Local
+              </button>
             </div>
             {backendMode === "local" && (
               <div className="space-y-1">
