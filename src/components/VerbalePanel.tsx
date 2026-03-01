@@ -10,6 +10,7 @@ import { exportVerbaleDocx } from "@/lib/docx-export";
 import { type ReportCase, type ReportData } from "@/lib/report-template";
 import { resolveDisplayName } from "./SpeakerMappingCard";
 import { getTranscription, saveTranscription, getSpeakers, type Speaker, type TranscriptSegment, type VerbaleState } from "@/lib/local-store";
+import { callGemini, parseGeminiJson, hasGeminiApiKey } from "@/lib/gemini";
 
 interface Props {
   segments: TranscriptSegment[];
@@ -86,9 +87,12 @@ export function VerbalePanel({ segments, speakerMapping, transcriptionId, conver
       toast.error("Nessun segmento disponibile.");
       return;
     }
+    if (!hasGeminiApiKey()) {
+      toast.error("Configura la chiave API Gemini nelle impostazioni (sidebar).");
+      return;
+    }
     setExtracting(true);
     if (conversationDate) setMeetingDate(conversationDate);
-    // Auto-add segment speakers as attendees
     setSelectedAttendees(segmentSpeakers);
 
     try {
@@ -99,24 +103,23 @@ export function VerbalePanel({ segments, speakerMapping, transcriptionId, conver
         })
         .join("\n");
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-cases`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ transcript_text: fullText }),
-        }
-      );
+      const systemPrompt = `Sei un assistente legale esperto specializzato in sinistri sanitari. Analizza la trascrizione di un CVS e identifica OGNI pratica/paziente discusso.
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: "Extraction failed" }));
-        throw new Error(err.error || "Extraction failed");
-      }
+Per ogni caso estrai:
+- patient_name: COGNOME NOME in MAIUSCOLO
+- description: Riassunto DETTAGLIATO (5-8 frasi, tono medico-legale)
+- is_new_claim: true/false
+- suggested_outcome: "istruttoria"|"riserva"|"prematuro"|"sviluppi"|"archiviazione"|"proposta_transattiva"|""
+- outcome_extra: info aggiuntive
 
-      const data = await response.json();
+Estrai anche: facility_name, meeting_location, start_time (HH:MM), closing_time (HH:MM), general_discussion, next_meeting_date (YYYY-MM-DD), next_meeting_time (HH:MM)
+
+NON inventare. Rispondi SOLO con JSON valido:
+{"cases":[...],"facility_name":"...","meeting_location":"...","start_time":"...","closing_time":"...","general_discussion":"...","next_meeting_date":"...","next_meeting_time":"..."}`;
+
+      const responseText = await callGemini(`${systemPrompt}\n\nTrascrizione:\n${fullText}`, { jsonMode: true });
+      const data = parseGeminiJson(responseText);
+
       const extracted: ReportCase[] = (data.cases || []).map((c: any) => ({
         patientName: c.patient_name || "",
         description: c.description || "",
@@ -128,7 +131,6 @@ export function VerbalePanel({ segments, speakerMapping, transcriptionId, conver
       if (extracted.length === 0) toast.warning("Nessun caso identificato.");
       else setCases(extracted);
 
-      // Auto-fill metadata from AI response
       if (data.facility_name && !facilityName) setFacilityName(data.facility_name);
       if (data.meeting_location && !location) setLocation(data.meeting_location);
       if (data.start_time && !startTime) setStartTime(data.start_time);

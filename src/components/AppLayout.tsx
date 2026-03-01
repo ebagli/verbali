@@ -1,6 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Mic, FileText, Database } from "lucide-react";
+import { Mic, FileText, Database, Settings, Check } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { getGeminiApiKey, setGeminiApiKey } from "@/lib/gemini";
+import { toast } from "sonner";
 
 interface Props {
   children: ReactNode;
@@ -9,6 +13,14 @@ interface Props {
 export function AppLayout({ children }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState(getGeminiApiKey());
+
+  const saveApiKey = () => {
+    setGeminiApiKey(apiKey);
+    toast.success("Chiave API salvata");
+    setShowSettings(false);
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -47,11 +59,41 @@ export function AppLayout({ children }: Props) {
             <Database className="h-4 w-4" />
             Database
           </button>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              showSettings
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            }`}
+          >
+            <Settings className="h-4 w-4" />
+            Impostazioni
+          </button>
         </nav>
+
+        {/* Settings panel */}
+        {showSettings && (
+          <div className="px-3 py-3 border-t border-border space-y-2">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              Gemini API Key
+            </label>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="AIza..."
+              className="text-xs h-8"
+            />
+            <Button size="sm" className="w-full h-7 text-xs gap-1" onClick={saveApiKey}>
+              <Check className="h-3 w-3" /> Salva
+            </Button>
+          </div>
+        )}
 
         <div className="px-3 py-3 border-t border-border">
           <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider">
-            Database: In-Memory (LocalStorage)
+            Gemini API · LocalStorage
           </p>
         </div>
       </aside>
