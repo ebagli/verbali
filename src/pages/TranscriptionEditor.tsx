@@ -64,15 +64,11 @@ const TranscriptionEditor = () => {
     setSaving(true);
     try {
       const user = await db.auth.getUser();
-      if (!user) {
-        toast.error("Devi essere autenticato per salvare nel database.");
-        setSaving(false);
-        return;
-      }
+      const userId = user?.id || "anonymous";
 
       await db.transcriptions.upsert({
         id: id!,
-        user_id: user.id,
+        user_id: userId,
         conversation_date: conversationDate,
         transcript_json: segments as any,
         speaker_mapping: speakerMapping as any,
