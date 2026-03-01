@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Mic, Square, Loader2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { saveTranscription, type Transcription, type TranscriptSegment } from "@/lib/local-store";
+import { callGeminiWithAudio, parseGeminiJson, hasGeminiApiKey } from "@/lib/gemini";
 
 interface Props {
   open: boolean;
@@ -50,31 +51,39 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     setRecording(false);
   }, []);
 
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const processAudio = async (blob: Blob | File) => {
+    if (!hasGeminiApiKey()) {
+      toast.error("Configura la chiave API Gemini nelle impostazioni (sidebar).");
+      return;
+    }
+
     setProcessing(true);
     try {
-      const audioFile = blob instanceof File ? blob : new File([blob], "recording.webm", { type: "audio/webm" });
+      const mimeType = blob.type || "audio/webm";
+      const audioBase64 = await blobToBase64(blob);
 
-      const formData = new FormData();
-      formData.append("audio", audioFile);
+      const prompt = `Trascrivi questo audio in italiano con diarizzazione degli speaker.
+Identifica i diversi parlanti e assegna etichette come speaker_0, speaker_1, etc.
+Rispondi SOLO con un JSON valido nel formato:
+{
+  "segments": [{"speaker": "speaker_0", "text": "...", "start": 0, "end": 5}],
+  "text": "testo completo..."
+}`;
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: "Transcription failed" }));
-        throw new Error(err.error || "Transcription failed");
-      }
-
-      const result = await response.json();
+      const responseText = await callGeminiWithAudio(audioBase64, mimeType, prompt);
+      const result = parseGeminiJson(responseText);
       const segments: TranscriptSegment[] = result.segments || [];
 
       const id = crypto.randomUUID();
