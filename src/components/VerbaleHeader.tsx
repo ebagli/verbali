@@ -1,15 +1,8 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Building2, Wand2 } from "lucide-react";
-
-interface Speaker {
-  id: string;
-  full_name: string;
-  title: string;
-}
+import { Building2 } from "lucide-react";
+import { getSpeakers, type Speaker } from "@/lib/local-store";
 
 interface Props {
   facilityName: string;
@@ -30,24 +23,13 @@ export function VerbaleHeader({
   selectedAttendees, onAttendeesChange,
   errors = {},
 }: Props) {
-  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const speakers = getSpeakers();
 
-  useEffect(() => {
-    supabase
-      .from("speakers")
-      .select("id, full_name, title")
-      .order("full_name")
-      .then(({ data }) => { if (data) setSpeakers(data); });
-  }, []);
-
-  const displayName = (s: Speaker) =>
-    s.title ? `${s.title} ${s.full_name}` : s.full_name;
+  const displayName = (s: Speaker) => (s.title ? `${s.title} ${s.full_name}` : s.full_name);
 
   const toggleAttendee = (id: string) => {
     onAttendeesChange(
-      selectedAttendees.includes(id)
-        ? selectedAttendees.filter((a) => a !== id)
-        : [...selectedAttendees, id]
+      selectedAttendees.includes(id) ? selectedAttendees.filter((a) => a !== id) : [...selectedAttendees, id]
     );
   };
 
@@ -78,13 +60,7 @@ export function VerbaleHeader({
           <label className="text-xs font-medium text-muted-foreground">Partecipanti</label>
           <div className="flex flex-wrap gap-2">
             {speakers.map((s) => (
-              <Button
-                key={s.id}
-                variant={selectedAttendees.includes(s.id) ? "default" : "outline"}
-                size="sm"
-                onClick={() => toggleAttendee(s.id)}
-                className="text-xs"
-              >
+              <Button key={s.id} variant={selectedAttendees.includes(s.id) ? "default" : "outline"} size="sm" onClick={() => toggleAttendee(s.id)} className="text-xs">
                 {displayName(s)}
               </Button>
             ))}

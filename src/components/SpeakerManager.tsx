@@ -1,66 +1,33 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Trash2, Users } from "lucide-react";
+import { getSpeakers, addSpeaker, removeSpeaker, type Speaker } from "@/lib/local-store";
 
-export interface Speaker {
-  id: string;
-  full_name: string;
-  title: string;
-}
-
-interface Props {
-  onSpeakersChange?: (speakers: Speaker[]) => void;
-}
-
-export function SpeakerManager({ onSpeakersChange }: Props) {
-  const { user } = useAuth();
-  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+export function SpeakerManager() {
+  const [speakers, setSpeakers] = useState<Speaker[]>(() => getSpeakers());
   const [newName, setNewName] = useState("");
   const [newTitle, setNewTitle] = useState("");
 
-  useEffect(() => {
-    if (user) fetchSpeakers();
-  }, [user]);
+  const refresh = () => setSpeakers(getSpeakers());
 
-  const fetchSpeakers = async () => {
-    const { data } = await supabase
-      .from("speakers")
-      .select("id, full_name, title")
-      .order("full_name");
-    if (data) {
-      setSpeakers(data);
-      onSpeakersChange?.(data);
-    }
-  };
-
-  const addSpeaker = async () => {
+  const handleAdd = () => {
     if (!newName.trim()) return;
-    const { error } = await supabase.from("speakers").insert({
-      user_id: user!.id,
-      full_name: newName.trim(),
-      title: newTitle.trim(),
-    });
-    if (error) {
-      toast.error("Errore nell'aggiunta");
-      return;
-    }
+    addSpeaker({ id: crypto.randomUUID(), full_name: newName.trim(), title: newTitle.trim() });
     setNewName("");
     setNewTitle("");
-    fetchSpeakers();
+    refresh();
+    toast.success("Partecipante aggiunto");
   };
 
-  const removeSpeaker = async (id: string) => {
-    await supabase.from("speakers").delete().eq("id", id);
-    fetchSpeakers();
+  const handleRemove = (id: string) => {
+    removeSpeaker(id);
+    refresh();
   };
 
-  const displayName = (s: Speaker) =>
-    s.title ? `${s.title} ${s.full_name}` : s.full_name;
+  const displayName = (s: Speaker) => (s.title ? `${s.title} ${s.full_name}` : s.full_name);
 
   return (
     <Card>
@@ -71,20 +38,15 @@ export function SpeakerManager({ onSpeakersChange }: Props) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex gap-2">
-          <Input
-            placeholder="Titolo (es. Dott.)"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            className="w-28"
-          />
+          <Input placeholder="Titolo (es. Dott.)" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-28" />
           <Input
             placeholder="Nome Cognome"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             className="flex-1"
-            onKeyDown={(e) => e.key === "Enter" && addSpeaker()}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           />
-          <Button size="sm" onClick={addSpeaker} className="gap-1">
+          <Button size="sm" onClick={handleAdd} className="gap-1">
             <Plus className="h-3.5 w-3.5" /> Aggiungi
           </Button>
         </div>
@@ -95,7 +57,7 @@ export function SpeakerManager({ onSpeakersChange }: Props) {
             {speakers.map((s) => (
               <div key={s.id} className="flex items-center justify-between text-sm py-1 px-2 rounded hover:bg-muted/50">
                 <span>{displayName(s)}</span>
-                <Button variant="ghost" size="sm" onClick={() => removeSpeaker(s.id)} className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive">
+                <Button variant="ghost" size="sm" onClick={() => handleRemove(s.id)} className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive">
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>

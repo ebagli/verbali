@@ -1,6 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useState, useMemo } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,42 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { Search, Calendar, FileText, Mic } from "lucide-react";
 import { RecordingDialog } from "@/components/RecordingDialog";
-
-interface Transcription {
-  id: string;
-  created_at: string;
-  conversation_date: string;
-  transcript_json: any[];
-  summary: string;
-}
+import { getTranscriptions, type Transcription } from "@/lib/local-store";
 
 const Index = () => {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const [transcriptions, setTranscriptions] = useState<Transcription[]>([]);
+  const [transcriptions, setTranscriptions] = useState<Transcription[]>(() => getTranscriptions());
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [showRecording, setShowRecording] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    fetchData();
-  }, [user]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("transcriptions")
-        .select("id, created_at, conversation_date, transcript_json, summary")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      setTranscriptions((data as unknown as Transcription[]) || []);
-    } catch (error) {
-      console.error("Error fetching transcriptions:", error);
-    }
-    setLoading(false);
-  };
+  const refresh = () => setTranscriptions(getTranscriptions());
 
   const filtered = useMemo(() => {
     if (!search) return transcriptions;
@@ -59,13 +30,12 @@ const Index = () => {
 
   const getPreview = (t: Transcription) => {
     if (t.summary) return t.summary.slice(0, 120) + (t.summary.length > 120 ? "…" : "");
-    const texts = (t.transcript_json as any[])?.map((s: any) => s.text).join(" ") || "";
+    const texts = t.transcript_json?.map((s) => s.text).join(" ") || "";
     return texts.slice(0, 120) + (texts.length > 120 ? "…" : "");
   };
 
   const getSpeakerCount = (t: Transcription) => {
-    const speakers = new Set((t.transcript_json as any[])?.map((s: any) => s.speaker));
-    return speakers.size;
+    return new Set(t.transcript_json?.map((s) => s.speaker)).size;
   };
 
   return (
@@ -87,23 +57,14 @@ const Index = () => {
 
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cerca trascrizioni…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+          <Input placeholder="Cerca trascrizioni…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          </div>
-        ) : filtered.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <FileText className="h-12 w-12 text-muted-foreground/40 mb-4" />
             <p className="text-lg font-medium text-muted-foreground">Nessuna trascrizione</p>
-            <p className="text-sm text-muted-foreground/70 mt-1">Registra la tua prima conversazione per iniziare</p>
+            <p className="text-sm text-muted-foreground/70 mt-1">Registra la tua prima conversazione o carica un file audio</p>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -138,7 +99,7 @@ const Index = () => {
         onOpenChange={setShowRecording}
         onComplete={() => {
           setShowRecording(false);
-          fetchData();
+          refresh();
         }}
       />
     </div>
