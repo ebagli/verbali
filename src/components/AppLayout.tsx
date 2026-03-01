@@ -49,9 +49,9 @@ export function AppLayout({ children }: Props) {
             I miei Verbali
           </button>
           <button
-            onClick={() => navigate("/speakers")}
+            onClick={() => navigate("/database")}
             className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              location.pathname === "/speakers"
+              location.pathname === "/database"
                 ? "bg-accent text-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
             }`}
