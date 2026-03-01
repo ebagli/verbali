@@ -80,7 +80,7 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
   const updateCase = (i: number, field: keyof ReportCase, value: string | boolean) => {
     setCases((prev) => prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)));
   };
-  const addCase = () => setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isNewClaim: false }]);
+  const addCase = () => setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isOpen: true }]);
   const removeCase = (i: number) => setCases((prev) => prev.filter((_, idx) => idx !== i));
 
   const handleAutoFill = async () => {
@@ -109,7 +109,7 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
 Per ogni caso estrai:
 - patient_name: COGNOME NOME in MAIUSCOLO
 - description: Riassunto DETTAGLIATO (5-8 frasi, tono medico-legale)
-- is_new_claim: true/false
+- is_open: true se il caso è ancora aperto/in corso, false se chiuso/archiviato
 - suggested_outcome: "istruttoria"|"riserva"|"prematuro"|"sviluppi"|"archiviazione"|"proposta_transattiva"|""
 - outcome_extra: info aggiuntive
 
@@ -126,7 +126,7 @@ NON inventare. Rispondi SOLO con JSON valido:
         description: c.description || "",
         outcomeId: c.suggested_outcome || "",
         outcomeExtra: c.outcome_extra || "",
-        isNewClaim: c.is_new_claim || false,
+        isOpen: c.is_open !== false,
       }));
 
       if (extracted.length === 0) toast.warning("Nessun caso identificato.");
@@ -317,8 +317,8 @@ NON inventare. Rispondi SOLO con JSON valido:
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Riepilogo Seduta</p>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
                 <span><span className="font-semibold text-foreground">{cases.length}</span> pratiche discusse</span>
-                {cases.filter(c => c.isNewClaim).length > 0 && (
-                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.isNewClaim).length}</span> nuove aperture</span>
+                {cases.filter(c => c.isOpen).length > 0 && (
+                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.isOpen).length}</span> casi aperti</span>
                 )}
                 {cases.filter(c => c.outcomeId === "riserva").length > 0 && (
                   <span><span className="font-semibold text-foreground">{cases.filter(c => c.outcomeId === "riserva").length}</span> riserve</span>

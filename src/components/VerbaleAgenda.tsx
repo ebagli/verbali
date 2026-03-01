@@ -7,10 +7,10 @@ interface Props {
 }
 
 export function VerbaleAgenda({ cases }: Props) {
-  const existing = cases.filter((c) => !c.isNewClaim && c.patientName);
-  const newClaims = cases.filter((c) => c.isNewClaim && c.patientName);
+  const openCases = cases.filter((c) => c.isOpen && c.patientName);
+  const closedCases = cases.filter((c) => !c.isOpen && c.patientName);
 
-  if (existing.length === 0 && newClaims.length === 0) {
+  if (openCases.length === 0 && closedCases.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-3">
@@ -35,21 +35,21 @@ export function VerbaleAgenda({ cases }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {existing.length > 0 && (
+        {openCases.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Casi in discussione</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Casi aperti</p>
             <ul className="list-disc list-inside space-y-0.5">
-              {existing.map((c, i) => (
+              {openCases.map((c, i) => (
                 <li key={i} className="text-sm">{c.patientName}</li>
               ))}
             </ul>
           </div>
         )}
-        {newClaims.length > 0 && (
+        {closedCases.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Nuove richieste di risarcimento</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Casi chiusi</p>
             <ul className="list-disc list-inside space-y-0.5">
-              {newClaims.map((c, i) => (
+              {closedCases.map((c, i) => (
                 <li key={i} className="text-sm">{c.patientName}</li>
               ))}
             </ul>
