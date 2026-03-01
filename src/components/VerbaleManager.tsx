@@ -107,6 +107,11 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         })
         .join("\n");
 
+      // Input validation: limit transcript length to prevent abuse
+      if (fullText.length > 500000) {
+        throw new Error("Trascrizione troppo lunga (max 500.000 caratteri)");
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-cases`,
         {
@@ -115,7 +120,7 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ transcript_text: fullText }),
+          body: JSON.stringify({ transcript_text: fullText.slice(0, 500000) }),
         }
       );
 
