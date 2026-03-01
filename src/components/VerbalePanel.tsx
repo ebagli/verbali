@@ -308,11 +308,36 @@ NON inventare. Rispondi SOLO con JSON valido:
             <MessageSquare className="h-4 w-4" /> Discussione Generale
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {/* Summary stats */}
+          {cases.length > 0 && (
+            <div className="rounded-lg bg-muted/50 border border-border p-3 space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Riepilogo Seduta</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                <span><span className="font-semibold text-foreground">{cases.length}</span> pratiche discusse</span>
+                {cases.filter(c => c.isNewClaim).length > 0 && (
+                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.isNewClaim).length}</span> nuove aperture</span>
+                )}
+                {cases.filter(c => c.outcomeId === "riserva").length > 0 && (
+                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.outcomeId === "riserva").length}</span> riserve</span>
+                )}
+                {cases.filter(c => c.outcomeId === "archiviazione").length > 0 && (
+                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.outcomeId === "archiviazione").length}</span> archiviazioni</span>
+                )}
+                {cases.filter(c => c.outcomeId === "proposta_transattiva").length > 0 && (
+                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.outcomeId === "proposta_transattiva").length}</span> proposte transattive</span>
+                )}
+                {cases.filter(c => c.outcomeId === "istruttoria").length > 0 && (
+                  <span><span className="font-semibold text-foreground">{cases.filter(c => c.outcomeId === "istruttoria").length}</span> in istruttoria</span>
+                )}
+                <span><span className="font-semibold text-foreground">{selectedAttendees.length}</span> partecipanti</span>
+              </div>
+            </div>
+          )}
           <AutoResizeTextarea
             value={generalDiscussion}
             onChange={(e) => setGeneralDiscussion(e.target.value)}
-            placeholder="Sintesi della discussione generale..."
+            placeholder="Breve descrizione dell'oggetto della seduta e sintesi della discussione generale..."
             className="min-h-[100px]"
           />
         </CardContent>
