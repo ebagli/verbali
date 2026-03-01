@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,17 +33,14 @@ const Index = () => {
     return texts.slice(0, 120) + (texts.length > 120 ? "…" : "");
   };
 
-  const getSpeakerCount = (t: Transcription) => {
-    return new Set(t.transcript_json?.map((s) => s.speaker)).size;
-  };
+  const getSpeakerCount = (t: Transcription) => new Set(t.transcript_json?.map((s) => s.speaker)).size;
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-      <main className="container py-8 space-y-6">
+    <div className="flex-1 overflow-y-auto">
+      <div className="p-6 space-y-6 max-w-4xl mx-auto">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Trascrizioni</h1>
+            <h1 className="text-2xl font-bold tracking-tight">I miei Verbali</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {transcriptions.length} registrazion{transcriptions.length !== 1 ? "i" : "e"}
             </p>
@@ -69,11 +65,7 @@ const Index = () => {
         ) : (
           <div className="grid gap-3">
             {filtered.map((t) => (
-              <Card
-                key={t.id}
-                className="cursor-pointer hover:shadow-md transition-shadow border-border/60"
-                onClick={() => navigate(`/transcription/${t.id}`)}
-              >
+              <Card key={t.id} className="cursor-pointer hover:shadow-md transition-shadow border-border/60" onClick={() => navigate(`/transcription/${t.id}`)}>
                 <CardContent className="p-4 flex items-start gap-4">
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -92,16 +84,9 @@ const Index = () => {
             ))}
           </div>
         )}
-      </main>
+      </div>
 
-      <RecordingDialog
-        open={showRecording}
-        onOpenChange={setShowRecording}
-        onComplete={() => {
-          setShowRecording(false);
-          refresh();
-        }}
-      />
+      <RecordingDialog open={showRecording} onOpenChange={setShowRecording} onComplete={() => { setShowRecording(false); refresh(); }} />
     </div>
   );
 };
