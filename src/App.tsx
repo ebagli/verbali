@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/AppLayout";
 import Index from "./pages/Index";
 import TranscriptionEditor from "./pages/TranscriptionEditor";
 import Speakers from "./pages/Speakers";
+import DatabaseDashboard from "./pages/DatabaseDashboard";
 import NotFound from "./pages/NotFound";
 
 const App = () => (
@@ -18,6 +19,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/transcription/:id" element={<TranscriptionEditor />} />
           <Route path="/speakers" element={<Speakers />} />
+          <Route path="/database" element={<DatabaseDashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppLayout>
