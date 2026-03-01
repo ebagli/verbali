@@ -11,6 +11,7 @@ import { type ReportCase, type ReportData } from "@/lib/report-template";
 import { resolveDisplayName } from "./SpeakerMappingCard";
 import { getTranscription, saveTranscription, getSpeakers, type Speaker, type TranscriptSegment, type VerbaleState } from "@/lib/local-store";
 import { callGemini, parseGeminiJson, hasGeminiApiKey } from "@/lib/gemini";
+import { db } from "@/lib/db-backend";
 
 interface Props {
   segments: TranscriptSegment[];
@@ -35,6 +36,12 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
   const [extracting, setExtracting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
   const loadedRef = useRef(false);
+  const [persistentCases, setPersistentCases] = useState<{ id: string; patient_name: string; is_open: boolean }[]>([]);
+
+  // Load persistent cases
+  useEffect(() => {
+    db.cases.list().then(setPersistentCases).catch(() => {});
+  }, []);
 
   // Unique speakers from segments as attendee chips
   const segmentSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
@@ -68,20 +75,65 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
 
   useImperativeHandle(ref, () => ({ getVerbaleState }), [getVerbaleState]);
 
-  const saveVerbale = useCallback(() => {
+  const saveVerbale = useCallback(async () => {
     const t = getTranscription(transcriptionId);
     if (!t) return;
-    saveTranscription({ ...t, report_html: JSON.stringify(getVerbaleState()) });
+
+    // Create persistent cases for any case without a caseId
+    const user = await db.auth.getUser();
+    const userId = user?.id || "00000000-0000-0000-0000-000000000000";
+    const updatedCases = [...cases];
+    for (let i = 0; i < updatedCases.length; i++) {
+      const c = updatedCases[i];
+      if (!c.caseId && c.patientName.trim()) {
+        try {
+          const newId = await db.cases.create({ patient_name: c.patientName.trim(), is_open: c.isOpen, user_id: userId });
+          updatedCases[i] = { ...c, caseId: newId };
+        } catch { /* ignore */ }
+      } else if (c.caseId) {
+        // Update is_open status on persistent case
+        try { await db.cases.update(c.caseId, { is_open: c.isOpen }); } catch { /* ignore */ }
+      }
+    }
+    setCases(updatedCases);
+
+    const state = { ...getVerbaleState(), cases: updatedCases };
+    saveTranscription({ ...t, report_html: JSON.stringify(state) });
+    // Refresh persistent cases
+    db.cases.list().then(setPersistentCases).catch(() => {});
     toast.success("Verbale salvato.");
-  }, [transcriptionId, getVerbaleState]);
+  }, [transcriptionId, getVerbaleState, cases]);
 
   const displayName = (s: Speaker) => (s.title ? `${s.title} ${s.full_name}` : s.full_name);
 
   const updateCase = (i: number, field: keyof ReportCase, value: string | boolean) => {
     setCases((prev) => prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)));
   };
-  const addCase = () => setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isOpen: true }]);
+  const addCase = () => setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isOpen: true, caseId: "" }]);
   const removeCase = (i: number) => setCases((prev) => prev.filter((_, idx) => idx !== i));
+
+  // Match extracted cases against persistent cases by patient name
+  const matchCasesToPersistent = (extracted: ReportCase[], existing: { id: string; patient_name: string; is_open: boolean }[]): ReportCase[] => {
+    return extracted.map((c) => {
+      const nameNorm = c.patientName.trim().toUpperCase();
+      const match = existing.find((pc) => pc.patient_name.trim().toUpperCase() === nameNorm);
+      return { ...c, caseId: match?.id || "" };
+    });
+  };
+
+  // Create persistent case for a case card
+  const handleCreateNewCase = async (index: number) => {
+    const c = cases[index];
+    if (!c.patientName.trim()) { toast.error("Inserire il nome del paziente"); return; }
+    try {
+      const user = await db.auth.getUser();
+      const userId = user?.id || "00000000-0000-0000-0000-000000000000";
+      const newId = await db.cases.create({ patient_name: c.patientName.trim(), is_open: c.isOpen, user_id: userId });
+      setCases((prev) => prev.map((cc, i) => i === index ? { ...cc, caseId: newId } : cc));
+      setPersistentCases((prev) => [...prev, { id: newId, patient_name: c.patientName.trim(), is_open: c.isOpen }]);
+      toast.success("Caso creato e collegato");
+    } catch (err: any) { toast.error(err.message); }
+  };
 
   const handleAutoFill = async () => {
     if (segments.length === 0) {
@@ -127,10 +179,18 @@ NON inventare. Rispondi SOLO con JSON valido:
         outcomeId: c.suggested_outcome || "",
         outcomeExtra: c.outcome_extra || "",
         isOpen: c.is_open !== false,
+        caseId: "",
       }));
 
-      if (extracted.length === 0) toast.warning("Nessun caso identificato.");
-      else setCases(extracted);
+      // Match against existing persistent cases
+      const matched = matchCasesToPersistent(extracted, persistentCases);
+
+      if (matched.length === 0) toast.warning("Nessun caso identificato.");
+      else {
+        setCases(matched);
+        const matchedCount = matched.filter(c => c.caseId).length;
+        if (matchedCount > 0) toast.info(`${matchedCount} casi collegati automaticamente a casi esistenti.`);
+      }
 
       if (data.facility_name && !facilityName) setFacilityName(data.facility_name);
       if (data.meeting_location && !location) setLocation(data.meeting_location);
@@ -362,7 +422,7 @@ NON inventare. Rispondi SOLO con JSON valido:
             </p>
           )}
           {cases.map((c, i) => (
-            <VerbaleCaseCard key={i} caseData={c} index={i} canRemove onChange={(field, value) => updateCase(i, field, value)} onRemove={() => removeCase(i)} />
+            <VerbaleCaseCard key={i} caseData={c} index={i} canRemove persistentCases={persistentCases} onChange={(field, value) => updateCase(i, field, value)} onRemove={() => removeCase(i)} onCreateNewCase={() => handleCreateNewCase(i)} />
           ))}
         </CardContent>
       </Card>

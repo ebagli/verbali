@@ -50,6 +50,7 @@ export interface ReportCase {
   outcomeId: OutcomeId | "";
   outcomeExtra: string; // e.g. amount for proposta_transattiva
   isOpen: boolean;
+  caseId?: string; // persistent case ID linking across verbali
 }
 
 export interface ReportData {

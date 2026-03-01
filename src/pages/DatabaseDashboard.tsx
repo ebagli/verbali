@@ -10,7 +10,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Users, FileText, RefreshCw, CheckCircle2, Clock, FileUp, FileDown, Lock, Upload, FolderOpen } from "lucide-react";
+import { Users, FileText, RefreshCw, Clock, FileUp, FileDown, Lock, Upload, FolderOpen, Plus, Trash2, Pencil, ArrowLeft, ChevronRight } from "lucide-react";
 import { db, type TranscriptionRow } from "@/lib/db-backend";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -19,6 +19,7 @@ import {
   type Transcription, type Speaker, type VerbaleState,
 } from "@/lib/local-store";
 import type { ReportCase } from "@/lib/report-template";
+import { REPORT_TEMPLATE } from "@/lib/report-template";
 
 // XOR encrypt/decrypt
 const xorEncrypt = (data: string, password: string): string => {
@@ -39,12 +40,40 @@ const xorDecrypt = (b64: string, password: string): string => {
   return new TextDecoder().decode(result);
 };
 
+interface PersistentCase {
+  id: string;
+  patient_name: string;
+  is_open: boolean;
+  created_at: string;
+  user_id: string;
+}
+
+interface CaseEvolution {
+  verbaleId: string;
+  verbaleDate: string;
+  description: string;
+  outcomeId: string;
+  outcomeExtra: string;
+  isOpen: boolean;
+}
+
 const DatabaseDashboard = () => {
   const navigate = useNavigate();
   const [dbSpeakers, setDbSpeakers] = useState<Speaker[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscriptionRow[]>([]);
-  const [openCasesCount, setOpenCasesCount] = useState(0);
+  const [persistentCases, setPersistentCases] = useState<PersistentCase[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Speaker CRUD
+  const [newSpeakerName, setNewSpeakerName] = useState("");
+  const [newSpeakerTitle, setNewSpeakerTitle] = useState("");
+  const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+
+  // Case detail view
+  const [selectedCase, setSelectedCase] = useState<PersistentCase | null>(null);
+  const [caseEvolution, setCaseEvolution] = useState<CaseEvolution[]>([]);
 
   // Export/Import state
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -56,27 +85,14 @@ const DatabaseDashboard = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [spk, trx] = await Promise.all([
+      const [spk, trx, cases] = await Promise.all([
         db.speakers.list(),
         db.transcriptions.list(),
+        db.cases.list(),
       ]);
       setDbSpeakers(spk);
       setTranscriptions(trx);
-
-      // Count open cases from all transcriptions in localStorage
-      const allLocal = getTranscriptions();
-      let openCount = 0;
-      allLocal.forEach((t) => {
-        if (t.report_html) {
-          try {
-            const state: VerbaleState = JSON.parse(t.report_html);
-            if (state.cases) {
-              openCount += state.cases.filter((c: ReportCase) => c.isOpen).length;
-            }
-          } catch { /* ignore */ }
-        }
-      });
-      setOpenCasesCount(openCount);
+      setPersistentCases(cases);
     } catch (err: any) {
       toast.error("Errore nel caricamento dei dati: " + (err.message || ""));
     }
@@ -85,57 +101,101 @@ const DatabaseDashboard = () => {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // Load case evolution from transcriptions
+  const loadCaseEvolution = (caseItem: PersistentCase) => {
+    setSelectedCase(caseItem);
+    const allLocal = getTranscriptions();
+    const evolution: CaseEvolution[] = [];
+    allLocal.forEach((t) => {
+      if (t.report_html) {
+        try {
+          const state: VerbaleState = JSON.parse(t.report_html);
+          (state.cases || []).forEach((c: ReportCase) => {
+            if (c.caseId === caseItem.id) {
+              evolution.push({
+                verbaleId: t.id,
+                verbaleDate: t.conversation_date,
+                description: c.description,
+                outcomeId: c.outcomeId,
+                outcomeExtra: c.outcomeExtra,
+                isOpen: c.isOpen,
+              });
+            }
+          });
+        } catch { /* ignore */ }
+      }
+    });
+    evolution.sort((a, b) => a.verbaleDate.localeCompare(b.verbaleDate));
+    setCaseEvolution(evolution);
+  };
+
   // Load a verbale from DB into localStorage, then navigate to editor
   const loadVerbaleFromDb = async (verbaleId: string) => {
     try {
       const data = await db.transcriptions.get(verbaleId);
-      if (!data) {
-        toast.error("Impossibile caricare il verbale");
-        return;
-      }
-
+      if (!data) { toast.error("Impossibile caricare il verbale"); return; }
       const localTranscription: Transcription = {
-        id: data.id,
-        created_at: data.created_at,
-        conversation_date: data.conversation_date,
-        transcript_json: (data.transcript_json as any) || [],
-        speaker_mapping: (data.speaker_mapping as Record<string, string>) || {},
-        summary: data.summary || "",
-        report_html: data.report_html || "",
+        id: data.id, created_at: data.created_at, conversation_date: data.conversation_date,
+        transcript_json: (data.transcript_json as any) || [], speaker_mapping: (data.speaker_mapping as Record<string, string>) || {},
+        summary: data.summary || "", report_html: data.report_html || "",
       };
       saveTranscription(localTranscription);
       navigate(`/transcription/${verbaleId}`);
-    } catch {
-      toast.error("Errore nel caricamento");
-    }
+    } catch { toast.error("Errore nel caricamento"); }
   };
 
-  // openCasesCount is computed in fetchAll
+  // Speaker CRUD handlers
+  const handleAddSpeaker = async () => {
+    if (!newSpeakerName.trim()) return;
+    try {
+      await db.speakers.create({ full_name: newSpeakerName.trim(), title: newSpeakerTitle.trim(), user_id: "00000000-0000-0000-0000-000000000000" });
+      setNewSpeakerName(""); setNewSpeakerTitle("");
+      toast.success("Partecipante aggiunto");
+      fetchAll();
+    } catch (err: any) { toast.error(err.message); }
+  };
 
-  // --- Export all data ---
+  const handleDeleteSpeaker = async (id: string) => {
+    try {
+      await db.speakers.delete(id);
+      toast.success("Partecipante rimosso");
+      fetchAll();
+    } catch (err: any) { toast.error(err.message); }
+  };
+
+  const startEditSpeaker = (s: Speaker) => {
+    setEditingSpeaker(s);
+    setEditName(s.full_name);
+    setEditTitle(s.title);
+  };
+
+  const handleSaveEditSpeaker = async () => {
+    if (!editingSpeaker || !editName.trim()) return;
+    try {
+      // Delete and recreate since we don't have an update method for speakers
+      await db.speakers.delete(editingSpeaker.id);
+      await db.speakers.create({ full_name: editName.trim(), title: editTitle.trim(), user_id: "00000000-0000-0000-0000-000000000000" });
+      setEditingSpeaker(null);
+      toast.success("Partecipante aggiornato");
+      fetchAll();
+    } catch (err: any) { toast.error(err.message); }
+  };
+
+  // Export/Import
   const handleExportAll = () => {
     if (!lockPassword.trim()) { toast.error("Inserire una password"); return; }
-    const allData = {
-      transcriptions: getTranscriptions(),
-      speakers: getSpeakers(),
-      exportedAt: new Date().toISOString(),
-      version: 1,
-    };
+    const allData = { transcriptions: getTranscriptions(), speakers: getSpeakers(), exportedAt: new Date().toISOString(), version: 1 };
     const json = JSON.stringify(allData);
     const encrypted = xorEncrypt(json, lockPassword);
     const blob = new Blob([JSON.stringify({ locked: true, data: encrypted })], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const a = document.createElement("a"); a.href = url;
     a.download = `verbali_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.click(); URL.revokeObjectURL(url);
     toast.success("Backup completo esportato");
-    setExportDialogOpen(false);
-    setLockPassword("");
+    setExportDialogOpen(false); setLockPassword("");
   };
 
-  // --- Import all data ---
   const handleImportAll = async () => {
     if (!importFile) { toast.error("Selezionare un file"); return; }
     if (!importPassword.trim()) { toast.error("Inserire la password"); return; }
@@ -145,30 +205,75 @@ const DatabaseDashboard = () => {
       if (!json.locked || !json.data) { toast.error("File non valido"); return; }
       const decrypted = xorDecrypt(json.data, importPassword);
       const data = JSON.parse(decrypted);
-
       let imported = 0;
-      if (Array.isArray(data.transcriptions)) {
-        data.transcriptions.forEach((t: Transcription) => saveTranscription(t));
-        imported += data.transcriptions.length;
-      }
-      if (Array.isArray(data.speakers)) {
-        saveSpeakers(data.speakers);
-        imported += data.speakers.length;
-      }
-      if (data.transcription && !data.transcriptions) {
-        saveTranscription(data.transcription);
-        imported += 1;
-      }
-
+      if (Array.isArray(data.transcriptions)) { data.transcriptions.forEach((t: Transcription) => saveTranscription(t)); imported += data.transcriptions.length; }
+      if (Array.isArray(data.speakers)) { saveSpeakers(data.speakers); imported += data.speakers.length; }
+      if (data.transcription && !data.transcriptions) { saveTranscription(data.transcription); imported += 1; }
       toast.success(`Importati ${imported} elementi`);
       window.location.reload();
-    } catch {
-      toast.error("Password errata o file corrotto");
-    }
-    setImportDialogOpen(false);
-    setImportPassword("");
-    setImportFile(null);
+    } catch { toast.error("Password errata o file corrotto"); }
+    setImportDialogOpen(false); setImportPassword(""); setImportFile(null);
   };
+
+  const openCasesCount = persistentCases.filter(c => c.is_open).length;
+
+  const getOutcomeLabel = (id: string) => {
+    const o = REPORT_TEMPLATE.standard_outcomes.find(o => o.id === id);
+    return o ? o.label : id || "—";
+  };
+
+  // Case detail view
+  if (selectedCase) {
+    return (
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6 space-y-6 max-w-5xl mx-auto">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedCase(null)} className="gap-1.5">
+              <ArrowLeft className="h-4 w-4" /> Indietro
+            </Button>
+            <h1 className="text-2xl font-bold tracking-tight">{selectedCase.patient_name}</h1>
+            <Badge variant={selectedCase.is_open ? "destructive" : "secondary"}>
+              {selectedCase.is_open ? "Aperto" : "Chiuso"}
+            </Badge>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Evoluzione attraverso i Verbali</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {caseEvolution.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">Nessun verbale collegato a questo caso.</p>
+              ) : (
+                <div className="space-y-4">
+                  {caseEvolution.map((ev, i) => (
+                    <div key={i} className="border rounded-lg p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{new Date(ev.verbaleDate).toLocaleDateString("it-IT")}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={ev.isOpen ? "destructive" : "secondary"} className="text-xs">
+                            {ev.isOpen ? "Aperto" : "Chiuso"}
+                          </Badge>
+                          <Badge variant="outline">{getOutcomeLabel(ev.outcomeId)}</Badge>
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{ev.description || "Nessuna descrizione"}</p>
+                      <Button variant="ghost" size="sm" onClick={() => loadVerbaleFromDb(ev.verbaleId)} className="text-xs gap-1">
+                        <FileText className="h-3 w-3" /> Apri verbale
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -183,8 +288,7 @@ const DatabaseDashboard = () => {
               <FileDown className="h-3.5 w-3.5" /> Esporta JSON
             </Button>
             <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading} className="gap-1.5">
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              Aggiorna
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Aggiorna
             </Button>
           </div>
         </div>
@@ -229,24 +333,28 @@ const DatabaseDashboard = () => {
         {/* Tabs */}
         <Tabs defaultValue="speakers">
           <TabsList>
-            <TabsTrigger value="speakers" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" /> Partecipanti
-            </TabsTrigger>
-            <TabsTrigger value="cases" className="gap-1.5">
-              <FolderOpen className="h-3.5 w-3.5" /> Casi Aperti
-            </TabsTrigger>
-            <TabsTrigger value="verbali" className="gap-1.5">
-              <FileText className="h-3.5 w-3.5" /> Verbali
-            </TabsTrigger>
+            <TabsTrigger value="speakers" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Partecipanti</TabsTrigger>
+            <TabsTrigger value="cases" className="gap-1.5"><FolderOpen className="h-3.5 w-3.5" /> Casi</TabsTrigger>
+            <TabsTrigger value="verbali" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Verbali</TabsTrigger>
           </TabsList>
 
-          {/* Partecipanti */}
+          {/* Partecipanti with CRUD */}
           <TabsContent value="speakers">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Rubrica Partecipanti</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* Add form */}
+                <div className="flex gap-2">
+                  <Input placeholder="Titolo (es. Dott.)" value={newSpeakerTitle} onChange={(e) => setNewSpeakerTitle(e.target.value)} className="w-32" />
+                  <Input placeholder="Nome Cognome" value={newSpeakerName} onChange={(e) => setNewSpeakerName(e.target.value)} className="flex-1"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddSpeaker()} />
+                  <Button size="sm" onClick={handleAddSpeaker} className="gap-1">
+                    <Plus className="h-3.5 w-3.5" /> Aggiungi
+                  </Button>
+                </div>
+
                 {dbSpeakers.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">Nessun partecipante registrato.</p>
                 ) : (
@@ -255,7 +363,7 @@ const DatabaseDashboard = () => {
                       <TableRow>
                         <TableHead>Titolo</TableHead>
                         <TableHead>Nome</TableHead>
-                        <TableHead>Aggiunto il</TableHead>
+                        <TableHead className="w-24">Azioni</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -263,7 +371,16 @@ const DatabaseDashboard = () => {
                         <TableRow key={s.id}>
                           <TableCell className="text-muted-foreground">{s.title || "—"}</TableCell>
                           <TableCell className="font-medium">{s.full_name}</TableCell>
-                          <TableCell className="text-muted-foreground text-xs">—</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => startEditSpeaker(s)} className="h-7 w-7 p-0">
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleDeleteSpeaker(s.id)} className="h-7 w-7 p-0 text-destructive hover:text-destructive">
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -273,60 +390,45 @@ const DatabaseDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* Casi Aperti */}
+          {/* Casi (persistent) */}
           <TabsContent value="cases">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Casi Aperti</CardTitle>
+                <CardTitle className="text-base">Tutti i Casi</CardTitle>
               </CardHeader>
               <CardContent>
-                {(() => {
-                  const allLocal = getTranscriptions();
-                  const openCases: { patientName: string; description: string; outcomeId: string; verbaleDate: string }[] = [];
-                  allLocal.forEach((t) => {
-                    if (t.report_html) {
-                      try {
-                        const state: VerbaleState = JSON.parse(t.report_html);
-                        (state.cases || []).forEach((c: ReportCase) => {
-                          if (c.isOpen && c.patientName) {
-                            openCases.push({ patientName: c.patientName, description: c.description, outcomeId: c.outcomeId, verbaleDate: t.conversation_date });
-                          }
-                        });
-                      } catch { /* ignore */ }
-                    }
-                  });
-                  if (openCases.length === 0) {
-                    return <p className="text-sm text-muted-foreground italic">Nessun caso aperto.</p>;
-                  }
-                  return (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Paziente</TableHead>
-                          <TableHead>Descrizione</TableHead>
-                          <TableHead>Determinazione</TableHead>
-                          <TableHead>Data Verbale</TableHead>
+                {persistentCases.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">Nessun caso registrato. I casi verranno creati automaticamente al salvataggio dei verbali.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Paziente</TableHead>
+                        <TableHead>Stato</TableHead>
+                        <TableHead>Creato il</TableHead>
+                        <TableHead className="w-12"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {persistentCases.map((c) => (
+                        <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadCaseEvolution(c)}>
+                          <TableCell className="font-medium">{c.patient_name}</TableCell>
+                          <TableCell>
+                            <Badge variant={c.is_open ? "destructive" : "secondary"} className="text-xs">
+                              {c.is_open ? "Aperto" : "Chiuso"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">
+                            {new Date(c.created_at).toLocaleDateString("it-IT")}
+                          </TableCell>
+                          <TableCell>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {openCases.map((c, i) => (
-                          <TableRow key={i}>
-                            <TableCell className="font-medium">{c.patientName}</TableCell>
-                            <TableCell className="text-muted-foreground max-w-[250px] truncate">{c.description?.slice(0, 80) || "—"}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="gap-1">
-                                <Clock className="h-3 w-3" /> {c.outcomeId || "—"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-xs">
-                              {c.verbaleDate ? new Date(c.verbaleDate).toLocaleDateString() : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  );
-                })()}
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -351,20 +453,10 @@ const DatabaseDashboard = () => {
                     </TableHeader>
                     <TableBody>
                       {transcriptions.map((t) => (
-                        <TableRow
-                          key={t.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => loadVerbaleFromDb(t.id)}
-                        >
-                          <TableCell className="font-medium">
-                            {new Date(t.conversation_date).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground max-w-[300px] truncate">
-                            {t.summary?.slice(0, 80) || "—"}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-xs">
-                            {new Date(t.created_at).toLocaleDateString()}
-                          </TableCell>
+                        <TableRow key={t.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadVerbaleFromDb(t.id)}>
+                          <TableCell className="font-medium">{new Date(t.conversation_date).toLocaleDateString()}</TableCell>
+                          <TableCell className="text-muted-foreground max-w-[300px] truncate">{t.summary?.slice(0, 80) || "—"}</TableCell>
+                          <TableCell className="text-muted-foreground text-xs">{new Date(t.created_at).toLocaleDateString()}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -375,6 +467,21 @@ const DatabaseDashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Edit speaker dialog */}
+      <Dialog open={!!editingSpeaker} onOpenChange={(open) => !open && setEditingSpeaker(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifica Partecipante</DialogTitle>
+            <DialogDescription>Modifica il titolo e il nome del partecipante.</DialogDescription>
+          </DialogHeader>
+          <Input placeholder="Titolo" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+          <Input placeholder="Nome Cognome" value={editName} onChange={(e) => setEditName(e.target.value)} />
+          <DialogFooter>
+            <Button onClick={handleSaveEditSpeaker} className="gap-1.5">Salva</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Export dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>

@@ -4,18 +4,29 @@ import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Trash2, Link2, Plus } from "lucide-react";
 import { REPORT_TEMPLATE, type ReportCase } from "@/lib/report-template";
+
+interface PersistentCase {
+  id: string;
+  patient_name: string;
+  is_open: boolean;
+}
 
 interface Props {
   caseData: ReportCase;
   index: number;
   canRemove: boolean;
+  persistentCases?: PersistentCase[];
   onChange: (field: keyof ReportCase, value: string | boolean) => void;
   onRemove: () => void;
+  onCreateNewCase?: () => void;
 }
 
-export function VerbaleCaseCard({ caseData, index, canRemove, onChange, onRemove }: Props) {
+export function VerbaleCaseCard({ caseData, index, canRemove, persistentCases = [], onChange, onRemove, onCreateNewCase }: Props) {
+  const linkedCase = persistentCases.find(c => c.id === caseData.caseId);
+
   return (
     <Card className="border-border/60">
       <CardContent className="p-4 space-y-3 relative">
@@ -29,6 +40,39 @@ export function VerbaleCaseCard({ caseData, index, canRemove, onChange, onRemove
             <Trash2 className="h-3 w-3" />
           </Button>
         )}
+
+        {/* Case linking */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select
+            value={caseData.caseId || "__none__"}
+            onValueChange={(v) => onChange("caseId", v === "__none__" ? "" : v)}
+          >
+            <SelectTrigger className="w-[250px] h-8 text-xs">
+              <div className="flex items-center gap-1.5">
+                <Link2 className="h-3 w-3" />
+                <SelectValue placeholder="Collega a caso..." />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— Nessun collegamento —</SelectItem>
+              {persistentCases.map((pc) => (
+                <SelectItem key={pc.id} value={pc.id}>
+                  {pc.patient_name} {pc.is_open ? "🔴" : "🟢"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {linkedCase && (
+            <Badge variant="outline" className="text-xs gap-1">
+              <Link2 className="h-3 w-3" /> {linkedCase.patient_name}
+            </Badge>
+          )}
+          {!caseData.caseId && onCreateNewCase && (
+            <Button variant="ghost" size="sm" onClick={onCreateNewCase} className="text-xs h-7 gap-1">
+              <Plus className="h-3 w-3" /> Nuovo caso
+            </Button>
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           <Input
