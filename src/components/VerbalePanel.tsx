@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ interface Props {
   conversationDate: string;
 }
 
-export function VerbalePanel({ segments, speakerMapping, transcriptionId, conversationDate }: Props) {
+export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, Props>(function VerbalePanel({ segments, speakerMapping, transcriptionId, conversationDate }, ref) {
   const speakers = getSpeakers();
   const [title, setTitle] = useState("Verbale Comitato Valutazione Sinistri");
   const [facilityName, setFacilityName] = useState("");
@@ -65,6 +65,8 @@ export function VerbalePanel({ segments, speakerMapping, transcriptionId, conver
   const getVerbaleState = useCallback((): VerbaleState => ({
     title, facilityName, location, meetingDate, startTime, selectedAttendees, cases, generalDiscussion, closingDecisions, closingTime: "", nextMeetingDate, nextMeetingTime,
   }), [title, facilityName, location, meetingDate, startTime, selectedAttendees, cases, generalDiscussion, closingDecisions, nextMeetingDate, nextMeetingTime]);
+
+  useImperativeHandle(ref, () => ({ getVerbaleState }), [getVerbaleState]);
 
   const saveVerbale = useCallback(() => {
     const t = getTranscription(transcriptionId);
@@ -396,4 +398,4 @@ NON inventare. Rispondi SOLO con JSON valido:
 
     </div>
   );
-}
+});
