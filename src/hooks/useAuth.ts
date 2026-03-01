@@ -5,20 +5,47 @@ import { supabase } from "@/integrations/supabase/client";
 export function useAuth() {
   const [user, setUser] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unauthorized, setUnauthorized] = useState(false);
   const mode = getBackendMode();
 
   useEffect(() => {
     if (mode === "cloud") {
-      // Cloud mode: use Supabase auth state
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        const u = session?.user;
-        setUser(u ? { id: u.id, email: u.email || "" } : null);
+      const checkAuthorization = async (authUser: { id: string; email?: string } | null) => {
+        if (!authUser) {
+          setUser(null);
+          setUnauthorized(false);
+          setLoading(false);
+          return;
+        }
+
+        // Check if user is in authorized_users table
+        const { data: isAuthorized } = await supabase.rpc("is_authorized_user", {
+          _user_id: authUser.id,
+        });
+
+        if (isAuthorized) {
+          setUser({ id: authUser.id, email: authUser.email || "" });
+          setUnauthorized(false);
+        } else {
+          // Not authorized: sign out and show error
+          await supabase.auth.signOut();
+          setUser(null);
+          setUnauthorized(true);
+        }
         setLoading(false);
+      };
+
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        checkAuthorization(session?.user ?? null);
       });
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        const u = session?.user;
-        setUser(u ? { id: u.id, email: u.email || "" } : null);
+        if (_event === "SIGNED_IN" && session?.user) {
+          checkAuthorization(session.user);
+        } else if (_event === "SIGNED_OUT") {
+          setUser(null);
+          setLoading(false);
+        }
       });
 
       return () => subscription.unsubscribe();
@@ -40,7 +67,8 @@ export function useAuth() {
   const signOut = async () => {
     await db.auth.signOut();
     setUser(null);
+    setUnauthorized(false);
   };
 
-  return { user, loading, signIn, signOut };
+  return { user, loading, unauthorized, signIn, signOut };
 }
