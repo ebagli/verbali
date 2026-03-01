@@ -5,10 +5,9 @@ import { Input } from "@/components/ui/input";
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Plus, X, Download, Sparkles, Wand2, Lock, Upload } from "lucide-react";
+import { ArrowLeft, Save, Plus, X, Download, Sparkles, Wand2, Lock, Upload, FileUp, FileDown } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -24,7 +23,7 @@ const TranscriptionEditor = () => {
   const [conversationDate, setConversationDate] = useState("");
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakerMapping, setSpeakerMapping] = useState<Record<string, string>>({});
-  const [includeTranscript, setIncludeTranscript] = useState(true);
+  
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [lockPassword, setLockPassword] = useState("");
@@ -150,15 +149,11 @@ const TranscriptionEditor = () => {
           <h1 className="text-base font-semibold">Editor Verbale</h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Checkbox id="include-transcript" checked={includeTranscript} onCheckedChange={(v) => setIncludeTranscript(!!v)} />
-            <label htmlFor="include-transcript" className="text-sm text-muted-foreground cursor-pointer">Includi trascrizione</label>
-          </div>
           <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-1.5">
-            <Upload className="h-3.5 w-3.5" /> Importa
+            <FileUp className="h-3.5 w-3.5" /> Importa JSON
           </Button>
           <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)} className="gap-1.5">
-            <Lock className="h-3.5 w-3.5" /> Esporta JSON
+            <FileDown className="h-3.5 w-3.5" /> Esporta JSON
           </Button>
           <Button variant="outline" size="sm" onClick={handleSave} className="gap-1.5">
             <Save className="h-3.5 w-3.5" /> Salva
@@ -248,7 +243,6 @@ const TranscriptionEditor = () => {
             speakerMapping={speakerMapping}
             transcriptionId={id!}
             conversationDate={conversationDate}
-            includeTranscript={includeTranscript}
           />
         </div>
       </div>

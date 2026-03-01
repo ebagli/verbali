@@ -17,10 +17,9 @@ interface Props {
   speakerMapping: Record<string, string>;
   transcriptionId: string;
   conversationDate: string;
-  includeTranscript: boolean;
 }
 
-export function VerbalePanel({ segments, speakerMapping, transcriptionId, conversationDate, includeTranscript }: Props) {
+export function VerbalePanel({ segments, speakerMapping, transcriptionId, conversationDate }: Props) {
   const speakers = getSpeakers();
   const [title, setTitle] = useState("Verbale Comitato Valutazione Sinistri");
   const [facilityName, setFacilityName] = useState("");
