@@ -82,6 +82,7 @@ export async function seedDefaultUser() {
       VALUES (?, ?, ?)
     `).run(id, email, hashedPassword);
 
-    console.log(`Default user created: ${email} / ${password}`);
+    console.log(`Default user created: ${email}`);
+    console.log("⚠️  IMPORTANT: Change the default password immediately after first login!");
   }
 }
