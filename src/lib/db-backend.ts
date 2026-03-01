@@ -97,13 +97,6 @@ export const db = {
 
     signIn: async (email: string, password: string) => {
       if (getBackendMode() === "cloud") {
-        // Use edge function + supabase auth
-        const { data: fnData, error: fnError } = await supabase.functions.invoke("login", {
-          body: { email, password },
-        });
-        if (fnError) throw new Error(fnError.message || "Errore di rete.");
-        if (!fnData?.success) throw new Error(fnData?.error || "Credenziali non valide.");
-
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw new Error(signInError.message);
       } else {
