@@ -93,10 +93,19 @@ export function buildVerbaleDocument(data: ReportData): Document {
     })
   );
 
-  // Attendees
+  // === PARTECIPANTI section ===
+  children.push(
+    new Paragraph({
+      heading: HeadingLevel.HEADING_3,
+      spacing: { before: 100, after: 100 },
+      children: [new TextRun({ text: "PARTECIPANTI", bold: true, size: 22, font: "Times New Roman" })],
+    })
+  );
+
   data.attendees.forEach((a) => {
     children.push(
       new Paragraph({
+        bullet: { level: 0 },
         spacing: { after: 40 },
         children: [new TextRun({ text: a, size: 22, font: "Times New Roman" })],
       })
@@ -224,15 +233,30 @@ export function buildVerbaleDocument(data: ReportData): Document {
     );
   }
 
-  // Signature block
+  // === FIRME section ===
+  children.push(hr());
+
   children.push(
-    new Paragraph({ spacing: { before: 400 } })
+    new Paragraph({
+      heading: HeadingLevel.HEADING_3,
+      spacing: { before: 200, after: 200 },
+      children: [new TextRun({ text: "FIRME", bold: true, size: 22, font: "Times New Roman" })],
+    })
   );
+
   data.attendees.forEach((a) => {
+    // Name
     children.push(
       new Paragraph({
-        spacing: { after: 40 },
+        spacing: { before: 300, after: 40 },
         children: [new TextRun({ text: a, size: 22, font: "Times New Roman" })],
+      })
+    );
+    // Signature line
+    children.push(
+      new Paragraph({
+        spacing: { after: 100 },
+        children: [new TextRun({ text: "___________________________________", size: 22, font: "Times New Roman", color: "999999" })],
       })
     );
   });

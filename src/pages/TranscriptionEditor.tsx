@@ -8,7 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Plus, X, Download, Sparkles, Wand2 } from "lucide-react";
+import { ArrowLeft, Save, Plus, X, Download, Sparkles, Wand2, Lock, Upload } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbalePanel } from "@/components/VerbalePanel";
 import { exportTranscriptDocx } from "@/lib/docx-export";
@@ -22,6 +25,11 @@ const TranscriptionEditor = () => {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakerMapping, setSpeakerMapping] = useState<Record<string, string>>({});
   const [includeTranscript, setIncludeTranscript] = useState(true);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [lockPassword, setLockPassword] = useState("");
+  const [importPassword, setImportPassword] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -65,6 +73,64 @@ const TranscriptionEditor = () => {
 
   const uniqueSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
 
+  // Password-based XOR encryption (simple but functional)
+  const xorEncrypt = (data: string, password: string): string => {
+    const encoded = new TextEncoder().encode(data);
+    const key = new TextEncoder().encode(password);
+    const result = new Uint8Array(encoded.length);
+    for (let i = 0; i < encoded.length; i++) result[i] = encoded[i] ^ key[i % key.length];
+    return btoa(String.fromCharCode(...result));
+  };
+
+  const xorDecrypt = (b64: string, password: string): string => {
+    const raw = atob(b64);
+    const encoded = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) encoded[i] = raw.charCodeAt(i);
+    const key = new TextEncoder().encode(password);
+    const result = new Uint8Array(encoded.length);
+    for (let i = 0; i < encoded.length; i++) result[i] = encoded[i] ^ key[i % key.length];
+    return new TextDecoder().decode(result);
+  };
+
+  const handleExportLocked = () => {
+    if (!lockPassword.trim()) { toast.error("Inserire una password"); return; }
+    handleSave();
+    const t = getTranscription(id!);
+    const data = JSON.stringify({ transcription: t, speakers: getSpeakers() });
+    const encrypted = xorEncrypt(data, lockPassword);
+    const blob = new Blob([JSON.stringify({ locked: true, data: encrypted })], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `verbale_locked_${id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("JSON protetto esportato");
+    setExportDialogOpen(false);
+    setLockPassword("");
+  };
+
+  const handleImportLocked = async () => {
+    if (!importFile) { toast.error("Selezionare un file"); return; }
+    if (!importPassword.trim()) { toast.error("Inserire la password"); return; }
+    try {
+      const text = await importFile.text();
+      const json = JSON.parse(text);
+      if (!json.locked || !json.data) { toast.error("File non valido"); return; }
+      const decrypted = xorDecrypt(json.data, importPassword);
+      const data = JSON.parse(decrypted);
+      if (data.transcription) {
+        saveTranscription(data.transcription);
+        window.location.reload();
+      }
+    } catch {
+      toast.error("Password errata o file corrotto");
+    }
+    setImportDialogOpen(false);
+    setImportPassword("");
+    setImportFile(null);
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex justify-center items-center">
@@ -88,6 +154,12 @@ const TranscriptionEditor = () => {
             <Checkbox id="include-transcript" checked={includeTranscript} onCheckedChange={(v) => setIncludeTranscript(!!v)} />
             <label htmlFor="include-transcript" className="text-sm text-muted-foreground cursor-pointer">Includi trascrizione</label>
           </div>
+          <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-1.5">
+            <Upload className="h-3.5 w-3.5" /> Importa
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)} className="gap-1.5">
+            <Lock className="h-3.5 w-3.5" /> Esporta JSON
+          </Button>
           <Button variant="outline" size="sm" onClick={handleSave} className="gap-1.5">
             <Save className="h-3.5 w-3.5" /> Salva
           </Button>
@@ -181,60 +253,34 @@ const TranscriptionEditor = () => {
         </div>
       </div>
 
-      {/* Bottom bar */}
-      <div className="shrink-0 border-t border-border bg-card px-4 py-2 flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs h-7 gap-1"
-            onClick={() => {
-              const data = JSON.stringify({
-                transcriptions: [getTranscription(id!)],
-                speakers: getSpeakers(),
-              }, null, 2);
-              const blob = new Blob([data], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `backup_${id}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-              toast.success("Backup scaricato");
-            }}
-          >
-            💾 Backup
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs h-7 gap-1"
-            onClick={() => {
-              const input = document.createElement("input");
-              input.type = "file";
-              input.accept = ".json";
-              input.onchange = async (e) => {
-                const file = (e.target as HTMLInputElement).files?.[0];
-                if (!file) return;
-                try {
-                  const text = await file.text();
-                  const data = JSON.parse(text);
-                  if (data.transcriptions?.[0]) {
-                    saveTranscription(data.transcriptions[0]);
-                    window.location.reload();
-                  }
-                } catch {
-                  toast.error("File non valido");
-                }
-              };
-              input.click();
-            }}
-          >
-            🔄 Ripristina
-          </Button>
-        </div>
-        <span className="uppercase tracking-wider">Database: In-Memory (LocalStorage)</span>
-      </div>
+      {/* Export dialog */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Esporta JSON Protetto</DialogTitle>
+            <DialogDescription>Inserisci una password per proteggere il file.</DialogDescription>
+          </DialogHeader>
+          <Input type="password" placeholder="Password..." value={lockPassword} onChange={(e) => setLockPassword(e.target.value)} />
+          <DialogFooter>
+            <Button onClick={handleExportLocked} className="gap-1.5"><Lock className="h-4 w-4" /> Esporta</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Importa JSON Protetto</DialogTitle>
+            <DialogDescription>Seleziona il file e inserisci la password.</DialogDescription>
+          </DialogHeader>
+          <Input type="file" accept=".json" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
+          <Input type="password" placeholder="Password..." value={importPassword} onChange={(e) => setImportPassword(e.target.value)} />
+          <DialogFooter>
+            <Button onClick={handleImportLocked} className="gap-1.5"><Upload className="h-4 w-4" /> Importa</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

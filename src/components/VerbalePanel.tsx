@@ -121,12 +121,21 @@ export function VerbalePanel({ segments, speakerMapping, transcriptionId, conver
         patientName: c.patient_name || "",
         description: c.description || "",
         outcomeId: c.suggested_outcome || "",
-        outcomeExtra: "",
+        outcomeExtra: c.outcome_extra || "",
         isNewClaim: c.is_new_claim || false,
       }));
 
       if (extracted.length === 0) toast.warning("Nessun caso identificato.");
       else setCases(extracted);
+
+      // Auto-fill metadata from AI response
+      if (data.facility_name && !facilityName) setFacilityName(data.facility_name);
+      if (data.meeting_location && !location) setLocation(data.meeting_location);
+      if (data.start_time && !startTime) setStartTime(data.start_time);
+      if (data.general_discussion && !generalDiscussion) setGeneralDiscussion(data.general_discussion);
+      if (data.next_meeting_date && !nextMeetingDate) setNextMeetingDate(data.next_meeting_date);
+      if (data.next_meeting_time && !nextMeetingTime) setNextMeetingTime(data.next_meeting_time);
+
       toast.success("Compilato automaticamente.");
     } catch (err: any) {
       console.error(err);
@@ -359,10 +368,6 @@ export function VerbalePanel({ segments, speakerMapping, transcriptionId, conver
         </div>
       </div>
 
-      {/* Save button */}
-      <Button variant="secondary" onClick={saveVerbale} className="w-full gap-1.5" size="lg">
-        <Save className="h-4 w-4" /> Salva Verbale
-      </Button>
     </div>
   );
 }
