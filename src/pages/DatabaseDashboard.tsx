@@ -11,29 +11,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Users, AlertTriangle, FileText, RefreshCw, CheckCircle2, Clock, FileUp, FileDown, Lock, Upload } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db, type TranscriptionRow, type ProblematicCase } from "@/lib/db-backend";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
   getTranscriptions, getSpeakers, saveTranscription, saveSpeakers,
   type Transcription, type Speaker,
 } from "@/lib/local-store";
-
-interface ProblematicCase {
-  id: string;
-  transcription_id: string;
-  reason: string;
-  notes: string | null;
-  resolved: boolean;
-  created_at: string;
-}
-
-interface TranscriptionRow {
-  id: string;
-  conversation_date: string;
-  summary: string | null;
-  created_at: string;
-}
 
 // XOR encrypt/decrypt
 const xorEncrypt = (data: string, password: string): string => {
@@ -70,17 +54,18 @@ const DatabaseDashboard = () => {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [spk, cas, trx] = await Promise.all([
-      supabase.from("speakers").select("id, full_name, title, created_at").order("full_name"),
-      supabase.from("problematic_cases").select("id, transcription_id, reason, notes, resolved, created_at").order("created_at", { ascending: false }),
-      supabase.from("transcriptions").select("id, conversation_date, summary, created_at").order("conversation_date", { ascending: false }),
-    ]);
-    if (spk.error || cas.error || trx.error) {
-      toast.error("Errore nel caricamento dei dati");
+    try {
+      const [spk, cas, trx] = await Promise.all([
+        db.speakers.list(),
+        db.cases.list(),
+        db.transcriptions.list(),
+      ]);
+      setDbSpeakers(spk);
+      setCases(cas);
+      setTranscriptions(trx);
+    } catch (err: any) {
+      toast.error("Errore nel caricamento dei dati: " + (err.message || ""));
     }
-    setDbSpeakers((spk.data as Speaker[]) ?? []);
-    setCases((cas.data as ProblematicCase[]) ?? []);
-    setTranscriptions((trx.data as TranscriptionRow[]) ?? []);
     setLoading(false);
   };
 
@@ -89,13 +74,8 @@ const DatabaseDashboard = () => {
   // Load a verbale from DB into localStorage, then navigate to editor
   const loadVerbaleFromDb = async (verbaleId: string) => {
     try {
-      const { data, error } = await supabase
-        .from("transcriptions")
-        .select("*")
-        .eq("id", verbaleId)
-        .maybeSingle();
-
-      if (error || !data) {
+      const data = await db.transcriptions.get(verbaleId);
+      if (!data) {
         toast.error("Impossibile caricare il verbale");
         return;
       }
@@ -161,7 +141,6 @@ const DatabaseDashboard = () => {
         saveSpeakers(data.speakers);
         imported += data.speakers.length;
       }
-      // Legacy single-transcription format
       if (data.transcription && !data.transcriptions) {
         saveTranscription(data.transcription);
         imported += 1;
@@ -270,9 +249,7 @@ const DatabaseDashboard = () => {
                         <TableRow key={s.id}>
                           <TableCell className="text-muted-foreground">{s.title || "—"}</TableCell>
                           <TableCell className="font-medium">{s.full_name}</TableCell>
-                          <TableCell className="text-muted-foreground text-xs">
-                            —
-                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">—</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

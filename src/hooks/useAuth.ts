@@ -1,53 +1,44 @@
 import { useState, useEffect } from "react";
+import { db, getBackendMode, type DbUser } from "@/lib/db-backend";
 import { supabase } from "@/integrations/supabase/client";
-import type { User } from "@supabase/supabase-js";
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const mode = getBackendMode();
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    if (mode === "cloud") {
+      // Cloud mode: use Supabase auth state
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const u = session?.user;
+        setUser(u ? { id: u.id, email: u.email || "" } : null);
+        setLoading(false);
+      });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const u = session?.user;
+        setUser(u ? { id: u.id, email: u.email || "" } : null);
+      });
 
-    return () => subscription.unsubscribe();
-  }, []);
+      return () => subscription.unsubscribe();
+    } else {
+      // Local mode: check token
+      db.auth.getUser().then((u) => {
+        setUser(u);
+        setLoading(false);
+      });
+    }
+  }, [mode]);
 
   const signIn = async (email: string, password: string) => {
-    // Step 1: Validate credentials via the login edge function
-    const { data: fnData, error: fnError } = await supabase.functions.invoke("login", {
-      body: { email, password },
-    });
-
-    if (fnError) {
-      throw new Error(fnError.message || "Errore di rete.");
-    }
-
-    if (!fnData?.success) {
-      throw new Error(fnData?.error || "Credenziali non valide.");
-    }
-
-    // Step 2: Sign in with Supabase Auth (user was created/updated by edge function)
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (signInError) {
-      throw new Error(signInError.message);
-    }
+    await db.auth.signIn(email, password);
+    const u = await db.auth.getUser();
+    setUser(u);
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await db.auth.signOut();
     setUser(null);
   };
 
