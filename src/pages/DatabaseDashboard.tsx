@@ -2,21 +2,22 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Users, AlertTriangle, FileText, RefreshCw, CheckCircle2, Clock } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import { Users, AlertTriangle, FileText, RefreshCw, CheckCircle2, Clock, FileUp, FileDown, Lock, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-
-interface Speaker {
-  id: string;
-  full_name: string;
-  title: string;
-  created_at: string;
-}
+import {
+  getTranscriptions, getSpeakers, saveTranscription, saveSpeakers,
+  type Transcription, type Speaker,
+} from "@/lib/local-store";
 
 interface ProblematicCase {
   id: string;
@@ -34,12 +35,38 @@ interface TranscriptionRow {
   created_at: string;
 }
 
+// XOR encrypt/decrypt
+const xorEncrypt = (data: string, password: string): string => {
+  const encoded = new TextEncoder().encode(data);
+  const key = new TextEncoder().encode(password);
+  const result = new Uint8Array(encoded.length);
+  for (let i = 0; i < encoded.length; i++) result[i] = encoded[i] ^ key[i % key.length];
+  return btoa(String.fromCharCode(...result));
+};
+
+const xorDecrypt = (b64: string, password: string): string => {
+  const raw = atob(b64);
+  const encoded = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) encoded[i] = raw.charCodeAt(i);
+  const key = new TextEncoder().encode(password);
+  const result = new Uint8Array(encoded.length);
+  for (let i = 0; i < encoded.length; i++) result[i] = encoded[i] ^ key[i % key.length];
+  return new TextDecoder().decode(result);
+};
+
 const DatabaseDashboard = () => {
   const navigate = useNavigate();
-  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const [dbSpeakers, setDbSpeakers] = useState<Speaker[]>([]);
   const [cases, setCases] = useState<ProblematicCase[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscriptionRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Export/Import state
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [lockPassword, setLockPassword] = useState("");
+  const [importPassword, setImportPassword] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -51,7 +78,7 @@ const DatabaseDashboard = () => {
     if (spk.error || cas.error || trx.error) {
       toast.error("Errore nel caricamento dei dati");
     }
-    setSpeakers((spk.data as Speaker[]) ?? []);
+    setDbSpeakers((spk.data as Speaker[]) ?? []);
     setCases((cas.data as ProblematicCase[]) ?? []);
     setTranscriptions((trx.data as TranscriptionRow[]) ?? []);
     setLoading(false);
@@ -60,17 +87,83 @@ const DatabaseDashboard = () => {
   useEffect(() => { fetchAll(); }, []);
 
   const openCases = cases.filter((c) => !c.resolved);
-  const resolvedCases = cases.filter((c) => c.resolved);
+
+  // --- Export all data ---
+  const handleExportAll = () => {
+    if (!lockPassword.trim()) { toast.error("Inserire una password"); return; }
+    const allData = {
+      transcriptions: getTranscriptions(),
+      speakers: getSpeakers(),
+      exportedAt: new Date().toISOString(),
+      version: 1,
+    };
+    const json = JSON.stringify(allData);
+    const encrypted = xorEncrypt(json, lockPassword);
+    const blob = new Blob([JSON.stringify({ locked: true, data: encrypted })], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `verbali_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Backup completo esportato");
+    setExportDialogOpen(false);
+    setLockPassword("");
+  };
+
+  // --- Import all data ---
+  const handleImportAll = async () => {
+    if (!importFile) { toast.error("Selezionare un file"); return; }
+    if (!importPassword.trim()) { toast.error("Inserire la password"); return; }
+    try {
+      const text = await importFile.text();
+      const json = JSON.parse(text);
+      if (!json.locked || !json.data) { toast.error("File non valido"); return; }
+      const decrypted = xorDecrypt(json.data, importPassword);
+      const data = JSON.parse(decrypted);
+
+      let imported = 0;
+      if (Array.isArray(data.transcriptions)) {
+        data.transcriptions.forEach((t: Transcription) => saveTranscription(t));
+        imported += data.transcriptions.length;
+      }
+      if (Array.isArray(data.speakers)) {
+        saveSpeakers(data.speakers);
+        imported += data.speakers.length;
+      }
+      // Legacy single-transcription format
+      if (data.transcription && !data.transcriptions) {
+        saveTranscription(data.transcription);
+        imported += 1;
+      }
+
+      toast.success(`Importati ${imported} elementi`);
+      window.location.reload();
+    } catch {
+      toast.error("Password errata o file corrotto");
+    }
+    setImportDialogOpen(false);
+    setImportPassword("");
+    setImportFile(null);
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="p-6 space-y-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Database</h1>
-          <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading} className="gap-1.5">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Aggiorna
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-1.5">
+              <FileUp className="h-3.5 w-3.5" /> Importa JSON
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)} className="gap-1.5">
+              <FileDown className="h-3.5 w-3.5" /> Esporta JSON
+            </Button>
+            <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading} className="gap-1.5">
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              Aggiorna
+            </Button>
+          </div>
         </div>
 
         {/* Summary cards */}
@@ -81,7 +174,7 @@ const DatabaseDashboard = () => {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{speakers.length}</p>
+                <p className="text-2xl font-bold">{dbSpeakers.length}</p>
                 <p className="text-xs text-muted-foreground">Partecipanti</p>
               </div>
             </CardContent>
@@ -131,7 +224,7 @@ const DatabaseDashboard = () => {
                 <CardTitle className="text-base">Rubrica Partecipanti</CardTitle>
               </CardHeader>
               <CardContent>
-                {speakers.length === 0 ? (
+                {dbSpeakers.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">Nessun partecipante registrato.</p>
                 ) : (
                   <Table>
@@ -143,12 +236,12 @@ const DatabaseDashboard = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {speakers.map((s) => (
+                      {dbSpeakers.map((s) => (
                         <TableRow key={s.id}>
                           <TableCell className="text-muted-foreground">{s.title || "—"}</TableCell>
                           <TableCell className="font-medium">{s.full_name}</TableCell>
                           <TableCell className="text-muted-foreground text-xs">
-                            {new Date(s.created_at).toLocaleDateString()}
+                            —
                           </TableCell>
                         </TableRow>
                       ))}
@@ -250,6 +343,35 @@ const DatabaseDashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Export dialog */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Esporta Backup Completo</DialogTitle>
+            <DialogDescription>Esporta tutti i verbali, partecipanti e dati dell'app protetti con password.</DialogDescription>
+          </DialogHeader>
+          <Input type="password" placeholder="Password..." value={lockPassword} onChange={(e) => setLockPassword(e.target.value)} />
+          <DialogFooter>
+            <Button onClick={handleExportAll} className="gap-1.5"><Lock className="h-4 w-4" /> Esporta</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Importa Backup</DialogTitle>
+            <DialogDescription>Seleziona il file di backup e inserisci la password.</DialogDescription>
+          </DialogHeader>
+          <Input type="file" accept=".json" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
+          <Input type="password" placeholder="Password..." value={importPassword} onChange={(e) => setImportPassword(e.target.value)} />
+          <DialogFooter>
+            <Button onClick={handleImportAll} className="gap-1.5"><Upload className="h-4 w-4" /> Importa</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
