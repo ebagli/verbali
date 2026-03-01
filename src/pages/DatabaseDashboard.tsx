@@ -10,14 +10,15 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Users, AlertTriangle, FileText, RefreshCw, CheckCircle2, Clock, FileUp, FileDown, Lock, Upload } from "lucide-react";
-import { db, type TranscriptionRow, type ProblematicCase } from "@/lib/db-backend";
+import { Users, FileText, RefreshCw, CheckCircle2, Clock, FileUp, FileDown, Lock, Upload, FolderOpen } from "lucide-react";
+import { db, type TranscriptionRow } from "@/lib/db-backend";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
   getTranscriptions, getSpeakers, saveTranscription, saveSpeakers,
-  type Transcription, type Speaker,
+  type Transcription, type Speaker, type VerbaleState,
 } from "@/lib/local-store";
+import type { ReportCase } from "@/lib/report-template";
 
 // XOR encrypt/decrypt
 const xorEncrypt = (data: string, password: string): string => {
@@ -41,8 +42,8 @@ const xorDecrypt = (b64: string, password: string): string => {
 const DatabaseDashboard = () => {
   const navigate = useNavigate();
   const [dbSpeakers, setDbSpeakers] = useState<Speaker[]>([]);
-  const [cases, setCases] = useState<ProblematicCase[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscriptionRow[]>([]);
+  const [openCasesCount, setOpenCasesCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Export/Import state
@@ -55,14 +56,27 @@ const DatabaseDashboard = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [spk, cas, trx] = await Promise.all([
+      const [spk, trx] = await Promise.all([
         db.speakers.list(),
-        db.cases.list(),
         db.transcriptions.list(),
       ]);
       setDbSpeakers(spk);
-      setCases(cas);
       setTranscriptions(trx);
+
+      // Count open cases from all transcriptions in localStorage
+      const allLocal = getTranscriptions();
+      let openCount = 0;
+      allLocal.forEach((t) => {
+        if (t.report_html) {
+          try {
+            const state: VerbaleState = JSON.parse(t.report_html);
+            if (state.cases) {
+              openCount += state.cases.filter((c: ReportCase) => c.isOpen).length;
+            }
+          } catch { /* ignore */ }
+        }
+      });
+      setOpenCasesCount(openCount);
     } catch (err: any) {
       toast.error("Errore nel caricamento dei dati: " + (err.message || ""));
     }
@@ -96,7 +110,7 @@ const DatabaseDashboard = () => {
     }
   };
 
-  const openCases = cases.filter((c) => !c.resolved);
+  // openCasesCount is computed in fetchAll
 
   // --- Export all data ---
   const handleExportAll = () => {
@@ -191,10 +205,10 @@ const DatabaseDashboard = () => {
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive/10">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
+                <FolderOpen className="h-5 w-5 text-destructive" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{openCases.length}</p>
+                <p className="text-2xl font-bold">{openCasesCount}</p>
                 <p className="text-xs text-muted-foreground">Casi aperti</p>
               </div>
             </CardContent>
@@ -219,7 +233,7 @@ const DatabaseDashboard = () => {
               <Users className="h-3.5 w-3.5" /> Partecipanti
             </TabsTrigger>
             <TabsTrigger value="cases" className="gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5" /> Casi
+              <FolderOpen className="h-3.5 w-3.5" /> Casi Aperti
             </TabsTrigger>
             <TabsTrigger value="verbali" className="gap-1.5">
               <FileText className="h-3.5 w-3.5" /> Verbali
@@ -259,49 +273,60 @@ const DatabaseDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* Casi */}
+          {/* Casi Aperti */}
           <TabsContent value="cases">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Casi Problematici</CardTitle>
+                <CardTitle className="text-base">Casi Aperti</CardTitle>
               </CardHeader>
               <CardContent>
-                {cases.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">Nessun caso registrato.</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Stato</TableHead>
-                        <TableHead>Motivo</TableHead>
-                        <TableHead>Note</TableHead>
-                        <TableHead>Data</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {cases.map((c) => (
-                        <TableRow key={c.id}>
-                          <TableCell>
-                            {c.resolved ? (
-                              <Badge variant="secondary" className="gap-1">
-                                <CheckCircle2 className="h-3 w-3" /> Risolto
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive" className="gap-1">
-                                <Clock className="h-3 w-3" /> Aperto
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="font-medium max-w-[200px] truncate">{c.reason || "—"}</TableCell>
-                          <TableCell className="text-muted-foreground max-w-[200px] truncate">{c.notes || "—"}</TableCell>
-                          <TableCell className="text-muted-foreground text-xs">
-                            {new Date(c.created_at).toLocaleDateString()}
-                          </TableCell>
+                {(() => {
+                  const allLocal = getTranscriptions();
+                  const openCases: { patientName: string; description: string; outcomeId: string; verbaleDate: string }[] = [];
+                  allLocal.forEach((t) => {
+                    if (t.report_html) {
+                      try {
+                        const state: VerbaleState = JSON.parse(t.report_html);
+                        (state.cases || []).forEach((c: ReportCase) => {
+                          if (c.isOpen && c.patientName) {
+                            openCases.push({ patientName: c.patientName, description: c.description, outcomeId: c.outcomeId, verbaleDate: t.conversation_date });
+                          }
+                        });
+                      } catch { /* ignore */ }
+                    }
+                  });
+                  if (openCases.length === 0) {
+                    return <p className="text-sm text-muted-foreground italic">Nessun caso aperto.</p>;
+                  }
+                  return (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Paziente</TableHead>
+                          <TableHead>Descrizione</TableHead>
+                          <TableHead>Determinazione</TableHead>
+                          <TableHead>Data Verbale</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
+                      </TableHeader>
+                      <TableBody>
+                        {openCases.map((c, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">{c.patientName}</TableCell>
+                            <TableCell className="text-muted-foreground max-w-[250px] truncate">{c.description?.slice(0, 80) || "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="gap-1">
+                                <Clock className="h-3 w-3" /> {c.outcomeId || "—"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-xs">
+                              {c.verbaleDate ? new Date(c.verbaleDate).toLocaleDateString() : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  );
+                })()}
               </CardContent>
             </Card>
           </TabsContent>

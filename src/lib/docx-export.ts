@@ -123,8 +123,8 @@ export function buildVerbaleDocument(data: ReportData): Document {
     })
   );
 
-  const existingCases = data.cases.filter((c) => !c.isNewClaim && c.patientName);
-  const newClaims = data.cases.filter((c) => c.isNewClaim && c.patientName);
+  const existingCases = data.cases.filter((c) => c.isOpen && c.patientName);
+  const closedCases = data.cases.filter((c) => !c.isOpen && c.patientName);
 
   if (existingCases.length > 0) {
     children.push(
@@ -143,14 +143,14 @@ export function buildVerbaleDocument(data: ReportData): Document {
     });
   }
 
-  if (newClaims.length > 0) {
+  if (closedCases.length > 0) {
     children.push(
       new Paragraph({
         spacing: { before: 100, after: 60 },
-        children: [new TextRun({ text: "Nuove richieste di risarcimento:", bold: true, size: 22, font: "Times New Roman" })],
+        children: [new TextRun({ text: "Casi chiusi:", bold: true, size: 22, font: "Times New Roman" })],
       })
     );
-    newClaims.forEach((c) => {
+    closedCases.forEach((c) => {
       children.push(
         new Paragraph({
           bullet: { level: 0 },

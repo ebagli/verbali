@@ -39,12 +39,12 @@ export function VerbaleCaseCard({ caseData, index, canRemove, onChange, onRemove
           />
           <div className="flex items-center gap-1.5 shrink-0">
             <Checkbox
-              id={`new-claim-${index}`}
-              checked={caseData.isNewClaim}
-              onCheckedChange={(v) => onChange("isNewClaim", !!v)}
+              id={`open-case-${index}`}
+              checked={caseData.isOpen}
+              onCheckedChange={(v) => onChange("isOpen", !!v)}
             />
-            <label htmlFor={`new-claim-${index}`} className="text-xs text-muted-foreground cursor-pointer">
-              Nuova richiesta
+            <label htmlFor={`open-case-${index}`} className="text-xs text-muted-foreground cursor-pointer">
+              Aperto
             </label>
           </div>
         </div>

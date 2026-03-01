@@ -49,7 +49,7 @@ export interface ReportCase {
   description: string;
   outcomeId: OutcomeId | "";
   outcomeExtra: string; // e.g. amount for proposta_transattiva
-  isNewClaim: boolean;
+  isOpen: boolean;
 }
 
 export interface ReportData {
