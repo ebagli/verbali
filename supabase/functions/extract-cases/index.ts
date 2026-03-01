@@ -86,7 +86,7 @@ Rispondi SOLO con un JSON valido nel formato:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTrascrizione:\n${sanitized}` }] }],
-          generationConfig: { responseMimeType: "application/json" },
+          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 8192, temperature: 0.2 },
         }),
       }
     );
@@ -103,10 +103,35 @@ Rispondi SOLO con un JSON valido nel formato:
     }
 
     const data = await response.json();
+    const finishReason = data.candidates?.[0]?.finishReason;
+    console.log("Gemini finishReason:", finishReason);
+    
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("No response from Google Gemini");
+    if (!text) {
+      console.error("Empty Gemini response, full data:", JSON.stringify(data).slice(0, 500));
+      throw new Error("No response from Google Gemini");
+    }
 
-    const args = JSON.parse(text);
+    // Clean potential JSON issues
+    let cleaned = text.trim();
+    // Remove markdown code fences if present
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+    }
+
+    let args;
+    try {
+      args = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error("JSON parse failed, raw text:", cleaned.slice(0, 500));
+      // Try to fix common issues: single quotes, trailing commas
+      cleaned = cleaned
+        .replace(/'/g, '"')
+        .replace(/,\s*}/g, "}")
+        .replace(/,\s*]/g, "]");
+      args = JSON.parse(cleaned);
+    }
+
     return new Response(JSON.stringify(args), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
