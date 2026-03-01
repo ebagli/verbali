@@ -1,55 +1,22 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserCheck } from "lucide-react";
-
-interface Speaker {
-  id: string;
-  full_name: string;
-  title: string;
-}
-
-interface TranscriptSegment {
-  speaker: string;
-  text: string;
-  start?: number;
-  end?: number;
-}
+import { getSpeakers, type Speaker, type TranscriptSegment } from "@/lib/local-store";
 
 interface Props {
   segments: TranscriptSegment[];
-  mapping: Record<string, string>; // label -> speaker_id
+  mapping: Record<string, string>;
   onMappingChange: (mapping: Record<string, string>) => void;
 }
 
 export function SpeakerMappingCard({ segments, mapping, onMappingChange }: Props) {
-  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const speakers = getSpeakers();
   const uniqueLabels = [...new Set(segments.map((s) => s.speaker))];
 
-  useEffect(() => {
-    supabase
-      .from("speakers")
-      .select("id, full_name, title")
-      .order("full_name")
-      .then(({ data }) => {
-        if (data) setSpeakers(data);
-      });
-  }, []);
-
-  const displayName = (s: Speaker) =>
-    s.title ? `${s.title} ${s.full_name}` : s.full_name;
+  const displayName = (s: Speaker) => (s.title ? `${s.title} ${s.full_name}` : s.full_name);
 
   const handleChange = (label: string, speakerId: string) => {
-    const next = { ...mapping, [label]: speakerId === "__none__" ? "" : speakerId };
-    onMappingChange(next);
-  };
-
-  const getSpeakerDisplayForLabel = (label: string): string => {
-    const speakerId = mapping[label];
-    if (!speakerId) return label;
-    const speaker = speakers.find((s) => s.id === speakerId);
-    return speaker ? displayName(speaker) : label;
+    onMappingChange({ ...mapping, [label]: speakerId === "__none__" ? "" : speakerId });
   };
 
   if (uniqueLabels.length === 0 || speakers.length === 0) return null;
@@ -66,19 +33,14 @@ export function SpeakerMappingCard({ segments, mapping, onMappingChange }: Props
           <div key={label} className="flex items-center gap-3">
             <span className="text-sm font-mono w-28 shrink-0 text-muted-foreground">{label}</span>
             <span className="text-muted-foreground">→</span>
-            <Select
-              value={mapping[label] || "__none__"}
-              onValueChange={(v) => handleChange(label, v)}
-            >
+            <Select value={mapping[label] || "__none__"} onValueChange={(v) => handleChange(label, v)}>
               <SelectTrigger className="flex-1">
                 <SelectValue placeholder="Seleziona partecipante" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">— Non assegnato —</SelectItem>
                 {speakers.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {displayName(s)}
-                  </SelectItem>
+                  <SelectItem key={s.id} value={s.id}>{displayName(s)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

@@ -1,11 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,65 +12,44 @@ import { ArrowLeft, Save, Trash2, Plus, X, Download } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbaleManager } from "@/components/VerbaleManager";
 import { exportTranscriptDocx } from "@/lib/docx-export";
-
-interface TranscriptSegment {
-  speaker: string;
-  text: string;
-  start?: number;
-  end?: number;
-}
+import { getTranscription, saveTranscription, deleteTranscription, getSpeakers, type TranscriptSegment } from "@/lib/local-store";
 
 const TranscriptionEditor = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [conversationDate, setConversationDate] = useState("");
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakerMapping, setSpeakerMapping] = useState<Record<string, string>>({});
-  const [speakers, setSpeakers] = useState<{ id: string; full_name: string; title: string }[]>([]);
 
   useEffect(() => {
-    if (!id || !user) return;
-    fetchTranscription();
-    fetchSpeakers();
-  }, [id, user]);
-
-  const fetchSpeakers = async () => {
-    const { data } = await supabase.from("speakers").select("id, full_name, title").order("full_name");
-    if (data) setSpeakers(data);
-  };
-
-  const fetchTranscription = async () => {
-    setLoading(true);
-    const { data: t, error } = await supabase.from("transcriptions").select("*").eq("id", id!).single();
-    if (error || !t) {
+    if (!id) return;
+    const t = getTranscription(id);
+    if (!t) {
       toast.error("Trascrizione non trovata");
       navigate("/");
       return;
     }
     setConversationDate(t.conversation_date);
-    setSegments((t.transcript_json as unknown as TranscriptSegment[]) || []);
-    setSpeakerMapping(((t as any).speaker_mapping as Record<string, string>) || {});
+    setSegments(t.transcript_json || []);
+    setSpeakerMapping(t.speaker_mapping || {});
     setLoading(false);
-  };
+  }, [id]);
+
+  const speakers = getSpeakers();
 
   const getDisplayName = (label: string) => resolveDisplayName(label, speakerMapping, speakers);
 
-  const handleSave = async () => {
-    setSaving(true);
-    const { error } = await supabase
-      .from("transcriptions")
-      .update({
-        conversation_date: conversationDate,
-        transcript_json: segments as any,
-        speaker_mapping: speakerMapping,
-      } as any)
-      .eq("id", id!);
-    if (error) toast.error("Errore nel salvataggio");
-    else toast.success("Salvato con successo");
-    setSaving(false);
+  const handleSave = () => {
+    const t = getTranscription(id!);
+    if (!t) return;
+    saveTranscription({
+      ...t,
+      conversation_date: conversationDate,
+      transcript_json: segments,
+      speaker_mapping: speakerMapping,
+    });
+    toast.success("Salvato con successo");
   };
 
   const updateSegment = (index: number, field: keyof TranscriptSegment, value: string) => {
@@ -96,13 +72,11 @@ const TranscriptionEditor = () => {
     setSegments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Collect all unique speaker labels from segments
   const uniqueSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
 
-
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!confirm("Eliminare questa trascrizione in modo permanente?")) return;
-    await supabase.from("transcriptions").delete().eq("id", id!);
+    deleteTranscription(id!);
     toast.success("Eliminato");
     navigate("/");
   };
@@ -130,36 +104,21 @@ const TranscriptionEditor = () => {
             <Button variant="outline" size="sm" onClick={handleDelete} className="gap-1.5 text-destructive">
               <Trash2 className="h-3.5 w-3.5" /> Elimina
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
-              <Save className="h-3.5 w-3.5" /> {saving ? "Salvataggio…" : "Salva"}
+            <Button size="sm" onClick={handleSave} className="gap-1.5">
+              <Save className="h-3.5 w-3.5" /> Salva
             </Button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* LEFT COLUMN — Transcription */}
           <div className="space-y-6">
-            {/* Date */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-muted-foreground">Data Conversazione</label>
-              <Input
-                type="date"
-                value={conversationDate}
-                onChange={(e) => setConversationDate(e.target.value)}
-                className="max-w-xs"
-              />
+              <Input type="date" value={conversationDate} onChange={(e) => setConversationDate(e.target.value)} className="max-w-xs" />
             </div>
 
-            {/* Speaker Mapping */}
-            <SpeakerMappingCard
-              segments={segments}
-              mapping={speakerMapping}
-              onMappingChange={setSpeakerMapping}
-            />
+            <SpeakerMappingCard segments={segments} mapping={speakerMapping} onMappingChange={setSpeakerMapping} />
 
-
-
-            {/* Transcript */}
             <Card>
               <CardHeader className="pb-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Trascrizione</CardTitle>
@@ -201,20 +160,14 @@ const TranscriptionEditor = () => {
                           </SelectTrigger>
                           <SelectContent>
                             {uniqueSpeakers.map((spk) => (
-                              <SelectItem key={spk} value={spk}>
-                                {spk}
-                              </SelectItem>
+                              <SelectItem key={spk} value={spk}>{spk}</SelectItem>
                             ))}
                             <SelectItem value="__new__">+ Nuovo</SelectItem>
                           </SelectContent>
                         </Select>
                         <span className="text-[10px] text-muted-foreground block truncate" title={getDisplayName(seg.speaker)}>{getDisplayName(seg.speaker)}</span>
                       </div>
-                      <AutoResizeTextarea
-                        value={seg.text}
-                        onChange={(e) => updateSegment(i, "text", e.target.value)}
-                        className="flex-1 text-sm"
-                      />
+                      <AutoResizeTextarea value={seg.text} onChange={(e) => updateSegment(i, "text", e.target.value)} className="flex-1 text-sm" />
                       <div className="flex flex-col items-center gap-1 shrink-0 mt-1">
                         {seg.start != null && (
                           <Badge variant="secondary" className="text-[10px] px-1.5">
@@ -237,7 +190,6 @@ const TranscriptionEditor = () => {
             </Card>
           </div>
 
-          {/* RIGHT COLUMN — Verbale */}
           <div className="lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto space-y-6">
             <VerbaleManager
               segments={segments}

@@ -1,11 +1,10 @@
 import { useState, useRef, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Mic, Square, Loader2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { saveTranscription, type Transcription, type TranscriptSegment } from "@/lib/local-store";
 
 interface Props {
   open: boolean;
@@ -14,11 +13,10 @@ interface Props {
 }
 
 export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [processingLabel, setProcessingLabel] = useState("Transcribing audio…");
+  const [processingLabel, setProcessingLabel] = useState("Trascrizione in corso…");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -55,25 +53,17 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   const processAudio = async (blob: Blob | File) => {
     setProcessing(true);
     try {
-      if (!user) {
-        toast.error("Devi effettuare l'accesso");
-        setProcessing(false);
-        return;
-      }
-
       const audioFile = blob instanceof File ? blob : new File([blob], "recording.webm", { type: "audio/webm" });
 
-      // Call transcribe edge function
       const formData = new FormData();
       formData.append("audio", audioFile);
 
-      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${session?.access_token}`,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: formData,
         }
@@ -85,42 +75,23 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       }
 
       const result = await response.json();
+      const segments: TranscriptSegment[] = result.segments || [];
 
-      // Build segments from ElevenLabs response
-      const segments = (result.words || [])
-        .filter((word: any) => word.type === "word")
-        .reduce((acc: any[], word: any) => {
-          const speaker = word.speaker_id || "speaker_0";
-          const last = acc[acc.length - 1];
-          if (last && last.speaker === speaker) {
-            last.text += " " + word.text;
-            last.end = word.end;
-          } else {
-            acc.push({ speaker, text: word.text, start: word.start, end: word.end });
-          }
-          return acc;
-        }, []);
+      const id = crypto.randomUUID();
+      const transcription: Transcription = {
+        id,
+        created_at: new Date().toISOString(),
+        conversation_date: new Date().toISOString().split("T")[0],
+        transcript_json: segments.length > 0 ? segments : [{ speaker: "Speaker 1", text: result.text || "", start: 0, end: 0 }],
+        speaker_mapping: {},
+        summary: "",
+        report_html: "",
+      };
 
-      const finalSegments = segments.length > 0
-        ? segments
-        : [{ speaker: "Speaker 1", text: result.text || "", start: 0, end: 0 }];
-
-      // Save to database via Supabase
-      const { data, error } = await supabase
-        .from("transcriptions")
-        .insert({
-          user_id: user.id,
-          transcript_json: finalSegments as any,
-          conversation_date: new Date().toISOString().split("T")[0],
-        })
-        .select("id")
-        .single();
-
-      if (error) throw error;
-
-      toast.success("Trascrizione salvata!");
+      saveTranscription(transcription);
+      toast.success("Trascrizione completata!");
       onComplete();
-      navigate(`/transcription/${data.id}`);
+      navigate(`/transcription/${id}`);
     } catch (err: any) {
       toast.error(err.message || "Elaborazione fallita");
     }
@@ -132,7 +103,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Registra Audio</DialogTitle>
-        <DialogDescription>
+          <DialogDescription>
             Registra una conversazione o carica un file audio da trascrivere.
           </DialogDescription>
         </DialogHeader>
@@ -173,11 +144,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
                     e.target.value = "";
                   }}
                 />
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => fileInputRef.current?.click()}
-                >
+                <Button variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()}>
                   <Upload className="h-4 w-4" /> Carica file audio
                 </Button>
                 <p className="text-xs text-muted-foreground">MP3, WAV, M4A, WebM…</p>

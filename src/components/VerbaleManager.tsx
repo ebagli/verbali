@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Plus, Sparkles, Download, FileText, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -10,19 +9,7 @@ import { VerbaleFooter } from "./VerbaleFooter";
 import { exportVerbaleDocx } from "@/lib/docx-export";
 import { type ReportCase, type ReportData } from "@/lib/report-template";
 import { resolveDisplayName } from "./SpeakerMappingCard";
-
-interface TranscriptSegment {
-  speaker: string;
-  text: string;
-  start?: number;
-  end?: number;
-}
-
-interface Speaker {
-  id: string;
-  full_name: string;
-  title: string;
-}
+import { getTranscription, saveTranscription, getSpeakers, type Speaker, type TranscriptSegment } from "@/lib/local-store";
 
 interface VerbaleState {
   facilityName: string;
@@ -43,7 +30,7 @@ interface Props {
 }
 
 export function VerbaleManager({ segments, speakerMapping, transcriptionId, conversationDate }: Props) {
-  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const speakers = getSpeakers();
   const [facilityName, setFacilityName] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
   const [startTime, setStartTime] = useState("");
@@ -53,72 +40,41 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
   const [nextMeetingDate, setNextMeetingDate] = useState("");
   const [nextMeetingTime, setNextMeetingTime] = useState("");
   const [extracting, setExtracting] = useState(false);
-  const [savingVerbale, setSavingVerbale] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
   const loadedRef = useRef(false);
 
-  // Load speakers + saved verbale state
   useEffect(() => {
-    supabase
-      .from("speakers")
-      .select("id, full_name, title")
-      .order("full_name")
-      .then(({ data }) => { if (data) setSpeakers(data); });
-
     if (transcriptionId && !loadedRef.current) {
       loadedRef.current = true;
-      supabase
-        .from("transcriptions")
-        .select("report_html")
-        .eq("id", transcriptionId)
-        .single()
-        .then(({ data }) => {
-          if (data?.report_html) {
-            try {
-              const saved: VerbaleState = JSON.parse(data.report_html);
-              if (saved.facilityName) setFacilityName(saved.facilityName);
-              if (saved.meetingDate) setMeetingDate(saved.meetingDate);
-              if (saved.startTime) setStartTime(saved.startTime);
-              if (saved.selectedAttendees) setSelectedAttendees(saved.selectedAttendees);
-              if (saved.cases) setCases(saved.cases);
-              if (saved.closingTime) setClosingTime(saved.closingTime);
-              if (saved.nextMeetingDate) setNextMeetingDate(saved.nextMeetingDate);
-              if (saved.nextMeetingTime) setNextMeetingTime(saved.nextMeetingTime);
-            } catch {
-              // not JSON, ignore legacy data
-            }
-          }
-        });
+      const t = getTranscription(transcriptionId);
+      if (t?.report_html) {
+        try {
+          const saved: VerbaleState = JSON.parse(t.report_html);
+          if (saved.facilityName) setFacilityName(saved.facilityName);
+          if (saved.meetingDate) setMeetingDate(saved.meetingDate);
+          if (saved.startTime) setStartTime(saved.startTime);
+          if (saved.selectedAttendees) setSelectedAttendees(saved.selectedAttendees);
+          if (saved.cases) setCases(saved.cases);
+          if (saved.closingTime) setClosingTime(saved.closingTime);
+          if (saved.nextMeetingDate) setNextMeetingDate(saved.nextMeetingDate);
+          if (saved.nextMeetingTime) setNextMeetingTime(saved.nextMeetingTime);
+        } catch { /* ignore */ }
+      }
     }
   }, [transcriptionId]);
 
   const getVerbaleState = useCallback((): VerbaleState => ({
-    facilityName,
-    meetingDate,
-    startTime,
-    selectedAttendees,
-    cases,
-    closingTime,
-    nextMeetingDate,
-    nextMeetingTime,
+    facilityName, meetingDate, startTime, selectedAttendees, cases, closingTime, nextMeetingDate, nextMeetingTime,
   }), [facilityName, meetingDate, startTime, selectedAttendees, cases, closingTime, nextMeetingDate, nextMeetingTime]);
 
-  const saveVerbale = useCallback(async () => {
-    setSavingVerbale(true);
-    const { error } = await supabase
-      .from("transcriptions")
-      .update({ report_html: JSON.stringify(getVerbaleState()) } as any)
-      .eq("id", transcriptionId);
-    setSavingVerbale(false);
-    if (error) {
-      toast.error("Errore nel salvataggio del verbale.");
-    } else {
-      toast.success("Verbale salvato.");
-    }
+  const saveVerbale = useCallback(() => {
+    const t = getTranscription(transcriptionId);
+    if (!t) return;
+    saveTranscription({ ...t, report_html: JSON.stringify(getVerbaleState()) });
+    toast.success("Verbale salvato.");
   }, [transcriptionId, getVerbaleState]);
 
-  const displayName = (s: Speaker) =>
-    s.title ? `${s.title} ${s.full_name}` : s.full_name;
+  const displayName = (s: Speaker) => (s.title ? `${s.title} ${s.full_name}` : s.full_name);
 
   const updateCase = (i: number, field: keyof ReportCase, value: string | boolean) => {
     setCases((prev) => prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)));
@@ -139,13 +95,10 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
     }
 
     setExtracting(true);
-
-    // 1. Auto-populate header fields
     if (conversationDate) setMeetingDate(conversationDate);
     const mappedSpeakerIds = Object.values(speakerMapping).filter(Boolean);
     if (mappedSpeakerIds.length > 0) setSelectedAttendees(mappedSpeakerIds);
 
-    // 2. Extract cases via AI
     try {
       const fullText = segments
         .map((s) => {
@@ -154,13 +107,24 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         })
         .join("\n");
 
-      const { data, error } = await supabase.functions.invoke("extract-cases", {
-        body: { transcript_text: fullText },
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-cases`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ transcript_text: fullText }),
+        }
+      );
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Extraction failed" }));
+        throw new Error(err.error || "Extraction failed");
+      }
 
+      const data = await response.json();
       const extracted: ReportCase[] = (data.cases || []).map((c: any) => ({
         patientName: c.patient_name || "",
         description: c.description || "",
@@ -174,7 +138,6 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
       } else {
         setCases(extracted);
       }
-
       toast.success("Verbale popolato dalla trascrizione.");
     } catch (err: any) {
       console.error(err);
@@ -189,20 +152,10 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
       .filter(Boolean)
       .map((s) => displayName(s!));
 
-    return {
-      facilityName,
-      meetingDate,
-      attendees: attendeeNames,
-      cases,
-      startTime,
-      closingTime,
-      nextMeetingDate,
-      nextMeetingTime,
-    };
+    return { facilityName, meetingDate, attendees: attendeeNames, cases, startTime, closingTime, nextMeetingDate, nextMeetingTime };
   }, [facilityName, meetingDate, selectedAttendees, cases, startTime, closingTime, nextMeetingDate, nextMeetingTime, speakers]);
 
   const handleExportDocx = async () => {
-    // Validate required fields
     const errors: Record<string, boolean> = {};
     const missingFields: string[] = [];
     if (!facilityName.trim()) { errors.facilityName = true; missingFields.push("Struttura Sanitaria"); }
@@ -215,10 +168,7 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
     }
 
     setValidationErrors({});
-
-    // Auto-save before export
-    await saveVerbale();
-
+    saveVerbale();
     const data = buildReportData();
     try {
       await exportVerbaleDocx(data);
@@ -231,28 +181,20 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
 
   return (
     <div className="space-y-4">
-      {/* Section Title + Populate All */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 text-primary" />
           <h2 className="text-xl font-bold">Genera Verbale</h2>
         </div>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handlePopulateAll}
-          disabled={extracting || segments.length === 0}
-          className="gap-1.5"
-        >
+        <Button variant="default" size="sm" onClick={handlePopulateAll} disabled={extracting || segments.length === 0} className="gap-1.5">
           <Sparkles className="h-3.5 w-3.5" />
           {extracting ? "Popolamento…" : "Popola tutto con AI"}
         </Button>
       </div>
 
-      {/* Header */}
       <VerbaleHeader
         facilityName={facilityName}
-        onFacilityChange={(v) => { setFacilityName(v); if (v.trim()) setValidationErrors(prev => ({ ...prev, facilityName: false })); }}
+        onFacilityChange={(v) => { setFacilityName(v); if (v.trim()) setValidationErrors((prev) => ({ ...prev, facilityName: false })); }}
         meetingDate={meetingDate}
         onMeetingDateChange={setMeetingDate}
         startTime={startTime}
@@ -262,10 +204,8 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         errors={validationErrors}
       />
 
-      {/* Agenda (auto) */}
       <VerbaleAgenda cases={cases} />
 
-      {/* Cases */}
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase">Discussione Pratiche</h3>
@@ -276,23 +216,15 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
 
         {cases.length === 0 && (
           <p className="text-sm text-muted-foreground italic py-4 text-center">
-            Nessuna pratica. Usa "Popola Pratiche via AI" oppure aggiungi manualmente.
+            Nessuna pratica. Usa "Popola tutto con AI" oppure aggiungi manualmente.
           </p>
         )}
 
         {cases.map((c, i) => (
-          <VerbaleCaseCard
-            key={i}
-            caseData={c}
-            index={i}
-            canRemove={cases.length > 0}
-            onChange={(field, value) => updateCase(i, field, value)}
-            onRemove={() => removeCase(i)}
-          />
+          <VerbaleCaseCard key={i} caseData={c} index={i} canRemove={cases.length > 0} onChange={(field, value) => updateCase(i, field, value)} onRemove={() => removeCase(i)} />
         ))}
       </div>
 
-      {/* Footer */}
       <VerbaleFooter
         closingTime={closingTime}
         onClosingTimeChange={setClosingTime}
@@ -302,10 +234,9 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
         onNextMeetingTimeChange={setNextMeetingTime}
       />
 
-      {/* Save + Export */}
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={saveVerbale} disabled={savingVerbale} className="gap-1.5 flex-1" size="lg">
-          <Save className="h-4 w-4" /> {savingVerbale ? "Salvataggio…" : "Salva Verbale"}
+        <Button variant="secondary" onClick={saveVerbale} className="gap-1.5 flex-1" size="lg">
+          <Save className="h-4 w-4" /> Salva Verbale
         </Button>
         <Button onClick={handleExportDocx} className="gap-2 flex-1" size="lg">
           <Download className="h-4 w-4" /> Genera DOCX

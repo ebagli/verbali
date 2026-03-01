@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 
 serve(async (req) => {
@@ -9,34 +8,8 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
 
   try {
-    // Authentication check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: authError } = await supabaseClient.auth.getClaims(token);
-    if (authError || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const { transcript_text } = await req.json();
-    if (!transcript_text) throw new Error("No transcript_text provided");
-
-    if (typeof transcript_text !== "string") {
+    if (!transcript_text || typeof transcript_text !== "string") {
       return new Response(JSON.stringify({ error: "Invalid input: transcript_text must be a string" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -74,19 +47,8 @@ Rispondi SOLO con un JSON valido nel formato: {"cases": [{"patient_name": "...",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `${systemPrompt}\n\nTrascrizione:\n${sanitized}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-          },
+          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTrascrizione:\n${sanitized}` }] }],
+          generationConfig: { responseMimeType: "application/json" },
         }),
       }
     );
@@ -104,21 +66,17 @@ Rispondi SOLO con un JSON valido nel formato: {"cases": [{"patient_name": "...",
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error("No response from Google Gemini");
-    }
+    if (!text) throw new Error("No response from Google Gemini");
 
     const args = JSON.parse(text);
-
     return new Response(JSON.stringify(args), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
     console.error("extract-cases error:", error);
-    const corsHeaders = getCorsHeaders(req);
     return new Response(JSON.stringify({ error: "Errore interno del server." }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   }
 });
