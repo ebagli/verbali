@@ -64,7 +64,7 @@ const TranscriptionEditor = () => {
     setSaving(true);
     try {
       const user = await db.auth.getUser();
-      const userId = user?.id || "anonymous";
+      const userId = user?.id || "00000000-0000-0000-0000-000000000000";
 
       await db.transcriptions.upsert({
         id: id!,
