@@ -251,23 +251,51 @@ export const db = {
     },
   },
 
-  // ── Problematic Cases ──
+  // ── Persistent Cases ──
   cases: {
-    list: async (): Promise<ProblematicCase[]> => {
+    list: async (): Promise<{ id: string; patient_name: string; is_open: boolean; created_at: string; user_id: string }[]> => {
       if (getBackendMode() === "cloud") {
         const { data, error } = await supabase
-          .from("problematic_cases")
-          .select("id, transcription_id, reason, notes, resolved, created_at")
-          .order("created_at", { ascending: false });
+          .from("cases")
+          .select("id, patient_name, is_open, created_at, user_id")
+          .order("patient_name");
         if (error) throw new Error(error.message);
-        return (data || []) as ProblematicCase[];
+        return data || [];
       } else {
-        // Local might not have this endpoint - return empty
-        try {
-          return await localFetch("/cases");
-        } catch {
-          return [];
-        }
+        try { return await localFetch("/cases"); } catch { return []; }
+      }
+    },
+
+    create: async (c: { patient_name: string; is_open: boolean; user_id: string }): Promise<string> => {
+      if (getBackendMode() === "cloud") {
+        const { data, error } = await supabase
+          .from("cases")
+          .insert(c as any)
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        return data.id;
+      } else {
+        const res = await localFetch("/cases", { method: "POST", body: JSON.stringify(c) });
+        return res.id;
+      }
+    },
+
+    update: async (id: string, updates: { patient_name?: string; is_open?: boolean }) => {
+      if (getBackendMode() === "cloud") {
+        const { error } = await supabase.from("cases").update(updates as any).eq("id", id);
+        if (error) throw new Error(error.message);
+      } else {
+        await localFetch(`/cases/${id}`, { method: "PUT", body: JSON.stringify(updates) });
+      }
+    },
+
+    delete: async (id: string) => {
+      if (getBackendMode() === "cloud") {
+        const { error } = await supabase.from("cases").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      } else {
+        await localFetch(`/cases/${id}`, { method: "DELETE" });
       }
     },
   },

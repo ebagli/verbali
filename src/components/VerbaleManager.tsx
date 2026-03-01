@@ -81,7 +81,7 @@ export function VerbaleManager({ segments, speakerMapping, transcriptionId, conv
   };
 
   const addCase = () => {
-    setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isOpen: true }]);
+    setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isOpen: true, caseId: "" }]);
   };
 
   const removeCase = (i: number) => {
