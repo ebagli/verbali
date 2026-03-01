@@ -12,7 +12,7 @@ import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMapp
 import { VerbalePanel } from "@/components/VerbalePanel";
 import { exportTranscriptDocx } from "@/lib/docx-export";
 import { getTranscription, saveTranscription, deleteTranscription, getSpeakers, type TranscriptSegment } from "@/lib/local-store";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db-backend";
 
 const TranscriptionEditor = () => {
   const { id } = useParams<{ id: string }>();
@@ -60,17 +60,17 @@ const TranscriptionEditor = () => {
     };
     saveTranscription(updated);
 
-    // 2. Upsert to Supabase DB
+    // 2. Upsert to DB (cloud or local)
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await db.auth.getUser();
       if (!user) {
         toast.error("Devi essere autenticato per salvare nel database.");
         setSaving(false);
         return;
       }
 
-      const { error } = await supabase.from("transcriptions").upsert({
+      await db.transcriptions.upsert({
         id: id!,
         user_id: user.id,
         conversation_date: conversationDate,
@@ -78,18 +78,12 @@ const TranscriptionEditor = () => {
         speaker_mapping: speakerMapping as any,
         report_html: reportHtml,
         summary: updated.summary,
-      }, { onConflict: "id" });
-
-      if (error) {
-        console.error("DB save error:", error);
-        toast.error("Errore nel salvataggio su database: " + error.message);
-        setSaving(false);
-        return;
-      }
+      });
 
       toast.success("Salvato nel database!");
       navigate("/");
     } catch (err: any) {
+      console.error("DB save error:", err);
       toast.error("Errore: " + (err.message || "Salvataggio fallito"));
     }
     setSaving(false);
