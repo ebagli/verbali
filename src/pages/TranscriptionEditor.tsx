@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,22 +7,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Plus, X } from "lucide-react";
+import { ArrowLeft, Save, Plus, X, Loader2 } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbalePanel } from "@/components/VerbalePanel";
 import { exportTranscriptDocx } from "@/lib/docx-export";
 import { getTranscription, saveTranscription, deleteTranscription, getSpeakers, type TranscriptSegment } from "@/lib/local-store";
+import { supabase } from "@/integrations/supabase/client";
 
 const TranscriptionEditor = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [conversationDate, setConversationDate] = useState("");
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakerMapping, setSpeakerMapping] = useState<Record<string, string>>({});
-
-
-
+  const verbalePanelRef = useRef<{ getVerbaleState: () => any } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -41,11 +41,58 @@ const TranscriptionEditor = () => {
   const speakers = getSpeakers();
   const getDisplayName = (label: string) => resolveDisplayName(label, speakerMapping, speakers);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // 1. Save locally first
     const t = getTranscription(id!);
     if (!t) return;
-    saveTranscription({ ...t, conversation_date: conversationDate, transcript_json: segments, speaker_mapping: speakerMapping });
-    toast.success("Salvato con successo");
+
+    // Get verbale state from the panel
+    const verbaleState = verbalePanelRef.current?.getVerbaleState?.();
+    const reportHtml = verbaleState ? JSON.stringify(verbaleState) : t.report_html;
+
+    const updated = {
+      ...t,
+      conversation_date: conversationDate,
+      transcript_json: segments,
+      speaker_mapping: speakerMapping,
+      report_html: reportHtml,
+      summary: verbaleState?.generalDiscussion?.slice(0, 200) || t.summary || "",
+    };
+    saveTranscription(updated);
+
+    // 2. Upsert to Supabase DB
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Devi essere autenticato per salvare nel database.");
+        setSaving(false);
+        return;
+      }
+
+      const { error } = await supabase.from("transcriptions").upsert({
+        id: id!,
+        user_id: user.id,
+        conversation_date: conversationDate,
+        transcript_json: segments as any,
+        speaker_mapping: speakerMapping as any,
+        report_html: reportHtml,
+        summary: updated.summary,
+      }, { onConflict: "id" });
+
+      if (error) {
+        console.error("DB save error:", error);
+        toast.error("Errore nel salvataggio su database: " + error.message);
+        setSaving(false);
+        return;
+      }
+
+      toast.success("Salvato nel database!");
+      navigate("/");
+    } catch (err: any) {
+      toast.error("Errore: " + (err.message || "Salvataggio fallito"));
+    }
+    setSaving(false);
   };
 
   const updateSegment = (index: number, field: keyof TranscriptSegment, value: string) => {
@@ -87,8 +134,9 @@ const TranscriptionEditor = () => {
           <h1 className="text-base font-semibold">Editor Verbale</h1>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={handleSave} className="gap-1.5">
-            <Save className="h-3.5 w-3.5" /> Salva
+          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            {saving ? "Salvando…" : "Salva"}
           </Button>
         </div>
       </div>
@@ -171,6 +219,7 @@ const TranscriptionEditor = () => {
         {/* RIGHT - Verbale */}
         <div className="overflow-y-auto p-5">
           <VerbalePanel
+            ref={verbalePanelRef}
             segments={segments}
             speakerMapping={speakerMapping}
             transcriptionId={id!}

@@ -86,6 +86,36 @@ const DatabaseDashboard = () => {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // Load a verbale from DB into localStorage, then navigate to editor
+  const loadVerbaleFromDb = async (verbaleId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("transcriptions")
+        .select("*")
+        .eq("id", verbaleId)
+        .maybeSingle();
+
+      if (error || !data) {
+        toast.error("Impossibile caricare il verbale");
+        return;
+      }
+
+      const localTranscription: Transcription = {
+        id: data.id,
+        created_at: data.created_at,
+        conversation_date: data.conversation_date,
+        transcript_json: (data.transcript_json as any) || [],
+        speaker_mapping: (data.speaker_mapping as Record<string, string>) || {},
+        summary: data.summary || "",
+        report_html: data.report_html || "",
+      };
+      saveTranscription(localTranscription);
+      navigate(`/transcription/${verbaleId}`);
+    } catch {
+      toast.error("Errore nel caricamento");
+    }
+  };
+
   const openCases = cases.filter((c) => !c.resolved);
 
   // --- Export all data ---
@@ -321,8 +351,8 @@ const DatabaseDashboard = () => {
                       {transcriptions.map((t) => (
                         <TableRow
                           key={t.id}
-                          className="cursor-pointer"
-                          onClick={() => navigate(`/transcription/${t.id}`)}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => loadVerbaleFromDb(t.id)}
                         >
                           <TableCell className="font-medium">
                             {new Date(t.conversation_date).toLocaleDateString()}
