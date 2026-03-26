@@ -13,6 +13,23 @@ interface Props {
   onComplete: () => void;
 }
 
+const CHUNK_DURATION_SEC = 1800;
+const PROMPT = `Trascrivi l'audio fornito seguendo rigorosamente queste regole:
+    1. Lingua: Italiano.
+    2. Diarizzazione: Identifica i diversi parlanti (speaker_0, speaker_1, etc.).
+    3. Formato: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido. Non aggiungere saluti o spiegazioni.
+
+    Struttura richiesta:
+    {
+      "segments": [
+        { "speaker": "speaker_0", "text": "...", "start": 0.0, "end": 5.0 },
+        { "speaker": "speaker_1", "text": "...", "start": 5.1, "end": 10.0 }
+      ],
+      "text": "Il testo completo unito..."
+    }
+
+    ATTENZIONE: Se non riesci a trascrivere, restituisci un JSON con campi vuoti, mai testo libero.`;
+
 export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   const navigate = useNavigate();
   const [recording, setRecording] = useState(false);
@@ -25,7 +42,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -63,6 +80,85 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     });
   };
 
+  const getAudioDuration = async (blob: Blob): Promise<number> => {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new AudioContext();
+    try {
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      return audioBuffer.duration;
+    } catch {
+      return 0;
+    } finally {
+      audioCtx.close();
+    }
+  };
+
+  const splitAndEncode = async (blob: Blob, chunkDuration: number): Promise<Blob[]> => {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new AudioContext();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+    const numChannels = audioBuffer.numberOfChannels;
+    const totalSamples = audioBuffer.length;
+    const chunkSamples = Math.floor(chunkDuration * audioBuffer.sampleRate);
+    const blobs: Blob[] = [];
+
+    for (let offset = 0; offset < totalSamples; offset += chunkSamples) {
+      const length = Math.min(chunkSamples, totalSamples - offset);
+      const chunkBuffer = audioCtx.createBuffer(numChannels, length, audioBuffer.sampleRate);
+
+      for (let ch = 0; ch < numChannels; ch++) {
+        const src = audioBuffer.getChannelData(ch);
+        const dst = chunkBuffer.getChannelData(ch);
+        for (let i = 0; i < length; i++) dst[i] = src[offset + i];
+      }
+
+      const compressed = await encodeToOpus(chunkBuffer);
+      blobs.push(compressed);
+    }
+
+    audioCtx.close();
+    return blobs;
+  };
+
+  const encodeToOpus = (audioBuffer: AudioBuffer): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      const recorder = new MediaRecorder(dest.stream, {
+        mimeType: "audio/webm;codecs=opus",
+        audioBitsPerSecond: 24000,
+      });
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        ctx.close();
+        resolve(new Blob(chunks, { type: "audio/webm" }));
+      };
+
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(dest);
+      source.start();
+
+      recorder.start();
+      source.onended = () => setTimeout(() => recorder.stop(), 100);
+    });
+  };
+
+  const transcribeChunk = async (blob: Blob, mimeType: string, timeOffset: number): Promise<TranscriptSegment[]> => {
+    const audioBase64 = await blobToBase64(blob);
+    const responseText = await callGeminiWithAudio(audioBase64, mimeType, PROMPT);
+    const result = parseGeminiJson(responseText);
+    return (result.segments || []).map((s: any) => ({
+      speaker: s.speaker || "speaker_0",
+      text: s.text || "",
+      start: (s.start || 0) + timeOffset,
+      end: (s.end || 0) + timeOffset,
+    }));
+  };
+
   const processAudio = async (blob: Blob | File) => {
     if (!hasGeminiApiKey()) {
       toast.error("Configura la chiave API Gemini nelle impostazioni (sidebar).");
@@ -70,42 +166,49 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     }
 
     setProcessing(true);
+    const mimeType = blob.type || "audio/webm";
+    const sizeMB = blob.size / (1024 * 1024);
+
     try {
-      const mimeType = blob.type || "audio/webm";
-      const audioBase64 = await blobToBase64(blob);
+      setProcessingLabel("Analisi audio…");
+      const duration = await getAudioDuration(blob);
+      const durMin = Math.floor(duration / 60);
+      const durSec = Math.floor(duration % 60);
+      setProcessingLabel(`${mimeType.split("/")[1]?.toUpperCase() || "Audio"} | ${durMin}m ${durSec}s | ${sizeMB.toFixed(1)} MB`);
 
-      const prompt = `Trascrivi l'audio fornito seguendo rigorosamente queste regole:
-    1. Lingua: Italiano.
-    2. Diarizzazione: Identifica i diversi parlanti (speaker_0, speaker_1, etc.).
-    3. Formato: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido. Non aggiungere saluti o spiegazioni.
+      let segments: TranscriptSegment[] = [];
 
-    Struttura richiesta:
-    {
-      "segments": [
-        { "speaker": "speaker_0", "text": "...", "start": 0.0, "end": 5.0 },
-        { "speaker": "speaker_1", "text": "...", "start": 5.1, "end": 10.0 }
-      ],
-      "text": "Il testo completo unito..."
-    }
+      if (duration > CHUNK_DURATION_SEC) {
+        await new Promise(r => setTimeout(r, 500));
+        setProcessingLabel("Compressione e suddivisione…");
+        const chunks = await splitAndEncode(blob, CHUNK_DURATION_SEC);
 
-    ATTENZIONE: Se non riesci a trascrivere, restituisci un JSON con campi vuoti, mai testo libero.`;
-
-      const responseText = await callGeminiWithAudio(audioBase64, mimeType, prompt);
-      const result = parseGeminiJson(responseText);
-      const segments: TranscriptSegment[] = result.segments || [];
+        for (let i = 0; i < chunks.length; i++) {
+          setProcessingLabel(`Trascrizione parte ${i + 1}/${chunks.length}…`);
+          try {
+            const chunkSegments = await transcribeChunk(chunks[i], "audio/webm", i * CHUNK_DURATION_SEC);
+            segments = [...segments, ...chunkSegments];
+          } catch (e) {
+            console.error(`Errore nel chunk ${i}:`, e);
+            toast.error(`Errore nella parte ${i + 1}, procedo con le altre.`);
+          }
+        }
+      } else {
+        setProcessingLabel("Trascrizione in corso…");
+        segments = await transcribeChunk(blob, mimeType, 0);
+      }
 
       const id = crypto.randomUUID();
-      const transcription: Transcription = {
+      saveTranscription({
         id,
         created_at: new Date().toISOString(),
         conversation_date: new Date().toISOString().split("T")[0],
-        transcript_json: segments.length > 0 ? segments : [{ speaker: "Speaker 1", text: result.text || "", start: 0, end: 0 }],
+        transcript_json: segments.length > 0 ? segments : [{ speaker: "speaker_0", text: "", start: 0, end: 0 }],
         speaker_mapping: {},
         summary: "",
         report_html: "",
-      };
+      });
 
-      saveTranscription(transcription);
       toast.success("Trascrizione completata!");
       onComplete();
       navigate(`/transcription/${id}`);
@@ -154,7 +257,6 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      setProcessingLabel(`Trascrizione di "${file.name}"…`);
                       processAudio(file);
                     }
                     e.target.value = "";

@@ -1,6 +1,6 @@
-// Direct Gemini API client — no edge functions needed
+import { GoogleGenAI } from "@google/genai";
 
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const MODEL = "gemini-2.5-flash";
 const API_KEY_STORAGE = "gemini_api_key";
 
 export function getGeminiApiKey(): string {
@@ -15,77 +15,70 @@ export function hasGeminiApiKey(): boolean {
   return !!getGeminiApiKey();
 }
 
-interface GeminiResponse {
-  candidates?: {
-    content?: { parts?: { text?: string }[] };
-    finishReason?: string;
-  }[];
+function getClient(): GoogleGenAI {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error("Chiave API Gemini non configurata. Vai nelle impostazioni per inserirla.");
+  return new GoogleGenAI({ apiKey });
 }
 
 export async function callGemini(prompt: string, options?: { jsonMode?: boolean; maxTokens?: number }): Promise<string> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Chiave API Gemini non configurata. Vai nelle impostazioni per inserirla.");
-
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
+  try {
+    const ai = getClient();
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+      config: {
         ...(options?.jsonMode ? { responseMimeType: "application/json" } : {}),
-        maxOutputTokens: options?.maxTokens || 8192,
+        maxOutputTokens: options?.maxTokens || 16384,
         temperature: 0.2,
       },
-    }),
-  });
-
-  if (!response.ok) {
-    if (response.status === 429) throw new Error("Rate limit Gemini superato, riprova tra poco.");
-    if (response.status === 400) throw new Error("Chiave API Gemini non valida. Controlla nelle impostazioni.");
-    const errText = await response.text();
-    throw new Error(`Errore Gemini API: ${response.status} - ${errText}`);
+    });
+    const text = response.text;
+    if (!text) throw new Error("Nessuna risposta da Gemini.");
+    return text;
+  } catch (err: any) {
+    if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("Rate limit Gemini superato, riprova tra poco.");
+    }
+    if (err.message?.includes("400") || err.message?.includes("INVALID_ARGUMENT")) {
+      throw new Error("Chiave API Gemini non valida. Controlla nelle impostazioni.");
+    }
+    throw err;
   }
-
-  const data: GeminiResponse = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Nessuna risposta da Gemini.");
-  return text;
 }
 
 export async function callGeminiWithAudio(audioBase64: string, mimeType: string, prompt: string): Promise<string> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Chiave API Gemini non configurata. Vai nelle impostazioni per inserirla.");
-
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data: audioBase64 } },
-          { text: prompt },
-        ],
-      }],
-      generationConfig: {
+  try {
+    const ai = getClient();
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data: audioBase64 } },
+            { text: prompt },
+          ],
+        },
+      ],
+      config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 8192,
+        maxOutputTokens: 16384,
         temperature: 0.2,
       },
-    }),
-  });
-
-  if (!response.ok) {
-    if (response.status === 429) throw new Error("Rate limit Gemini superato, riprova tra poco.");
-    if (response.status === 400) throw new Error("Chiave API Gemini non valida o audio troppo grande.");
-    const errText = await response.text();
-    throw new Error(`Errore Gemini API: ${response.status} - ${errText}`);
+    });
+    const text = response.text;
+    if (!text) throw new Error("Nessuna risposta da Gemini.");
+    return text;
+  } catch (err: any) {
+    if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("Rate limit Gemini superato, riprova tra poco.");
+    }
+    if (err.message?.includes("400") || err.message?.includes("INVALID_ARGUMENT")) {
+      throw new Error("Chiave API Gemini non valida o audio troppo grande.");
+    }
+    throw err;
   }
-
-  const data: GeminiResponse = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Nessuna risposta da Gemini.");
-  return text;
 }
 
 export function parseGeminiJson(text: string): any {
@@ -93,10 +86,38 @@ export function parseGeminiJson(text: string): any {
   if (cleaned.startsWith("```")) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
   }
+
+  const fixJson = (json: string): string => {
+    let result = json;
+    const openBraces = (result.match(/{/g) || []).length;
+    const closeBraces = (result.match(/}/g) || []).length;
+    const openBrackets = (result.match(/\[/g) || []).length;
+    const closeBrackets = (result.match(/]/g) || []).length;
+
+    for (let i = 0; i < openBrackets - closeBrackets; i++) {
+      if (!result.trim().endsWith("]")) result += "]";
+    }
+    for (let i = 0; i < openBraces - closeBraces; i++) {
+      if (!result.trim().endsWith("}")) result += "}";
+    }
+
+    result = result.replace(/,\s*([}\]])/g, "$1");
+    return result;
+  };
+
   try {
     return JSON.parse(cleaned);
   } catch {
-    cleaned = cleaned.replace(/'/g, '"').replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
-    return JSON.parse(cleaned);
+    try {
+      const fixed = fixJson(cleaned);
+      return JSON.parse(fixed);
+    } catch {
+      cleaned = cleaned.replace(/'/g, '"').replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+      try {
+        return JSON.parse(cleaned);
+      } catch {
+        return JSON.parse(fixJson(cleaned));
+      }
+    }
   }
 }

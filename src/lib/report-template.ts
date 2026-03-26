@@ -64,7 +64,8 @@ export interface ReportData {
   nextMeetingTime: string;
 }
 
-export function getOutcomeText(outcomeId: OutcomeId | "", extra: string): string {
+export function getOutcomeText(outcomeId: OutcomeId | "" | "__custom__", extra: string): string {
+  if (outcomeId === "__custom__") return extra;
   const outcome = REPORT_TEMPLATE.standard_outcomes.find((o) => o.id === outcomeId);
   if (!outcome) return "";
   if (outcomeId === "proposta_transattiva" && extra) {

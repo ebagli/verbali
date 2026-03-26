@@ -70,9 +70,16 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
     }
   }, [transcriptionId]);
 
-  const getVerbaleState = useCallback((): VerbaleState => ({
-    title, facilityName, location, meetingDate, startTime, selectedAttendees, cases, generalDiscussion, closingDecisions, closingTime: "", nextMeetingDate, nextMeetingTime,
-  }), [title, facilityName, location, meetingDate, startTime, selectedAttendees, cases, generalDiscussion, closingDecisions, nextMeetingDate, nextMeetingTime]);
+  const getVerbaleState = useCallback((): VerbaleState => {
+    const updatedCases = cases.map((c) => {
+      if (!c.caseId && c.patientName.trim()) {
+        const newId = createPersistentCase(c.patientName.trim(), c.isOpen);
+        return { ...c, caseId: newId };
+      }
+      return c;
+    });
+    return { title, facilityName, location, meetingDate, startTime, selectedAttendees, cases: updatedCases, generalDiscussion, closingDecisions, closingTime: "", nextMeetingDate, nextMeetingTime };
+  }, [title, facilityName, location, meetingDate, startTime, selectedAttendees, cases, generalDiscussion, closingDecisions, nextMeetingDate, nextMeetingTime]);
 
   useImperativeHandle(ref, () => ({ getVerbaleState }), [getVerbaleState]);
 

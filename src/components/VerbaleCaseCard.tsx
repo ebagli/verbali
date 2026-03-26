@@ -99,12 +99,18 @@ export function VerbaleCaseCard({ caseData, index, canRemove, persistentCases = 
           onChange={(e) => onChange("description", e.target.value)}
         />
 
-        <div className="flex gap-2">
+        <div className="space-y-2">
           <Select
             value={caseData.outcomeId || "__none__"}
-            onValueChange={(v) => onChange("outcomeId", v === "__none__" ? "" : v)}
+            onValueChange={(v) => {
+              if (v === "__custom__") {
+                onChange("outcomeId", "__custom__");
+              } else {
+                onChange("outcomeId", v === "__none__" ? "" : v);
+              }
+            }}
           >
-            <SelectTrigger className="flex-1">
+            <SelectTrigger>
               <SelectValue placeholder="Determinazione..." />
             </SelectTrigger>
             <SelectContent>
@@ -114,14 +120,22 @@ export function VerbaleCaseCard({ caseData, index, canRemove, persistentCases = 
                   {o.label}
                 </SelectItem>
               ))}
+              <SelectItem value="__custom__">Testo libero...</SelectItem>
             </SelectContent>
           </Select>
+          {caseData.outcomeId === "__custom__" && (
+            <AutoResizeTextarea
+              placeholder="Inserisci la determinazione personalizzata..."
+              value={caseData.outcomeExtra}
+              onChange={(e) => onChange("outcomeExtra", e.target.value)}
+              className="min-h-[60px]"
+            />
+          )}
           {caseData.outcomeId === "proposta_transattiva" && (
             <Input
               placeholder="Importo € (es. 50.000)"
               value={caseData.outcomeExtra}
               onChange={(e) => onChange("outcomeExtra", e.target.value)}
-              className="w-40"
             />
           )}
         </div>

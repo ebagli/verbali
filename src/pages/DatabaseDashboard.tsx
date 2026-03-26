@@ -10,33 +10,16 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Users, FileText, Clock, FileUp, FileDown, Lock, Upload, FolderOpen, Plus, Trash2, Pencil, ArrowLeft, ChevronRight } from "lucide-react";
+import { Users, FileText, Clock, FileUp, FileDown, Upload, FolderOpen, Plus, Trash2, Pencil, ArrowLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
   getTranscriptions, getSpeakers, saveTranscription, saveSpeakers,
-  getPersistentCases, type Transcription, type Speaker, type VerbaleState, type PersistentCase,
+  getPersistentCases, savePersistentCases, exportAllDataGzip, importAllDataGzip,
+  type Transcription, type Speaker, type VerbaleState, type PersistentCase,
 } from "@/lib/local-store";
 import type { ReportCase } from "@/lib/report-template";
 import { REPORT_TEMPLATE } from "@/lib/report-template";
-
-const xorEncrypt = (data: string, password: string): string => {
-  const encoded = new TextEncoder().encode(data);
-  const key = new TextEncoder().encode(password);
-  const result = new Uint8Array(encoded.length);
-  for (let i = 0; i < encoded.length; i++) result[i] = encoded[i] ^ key[i % key.length];
-  return btoa(String.fromCharCode(...result));
-};
-
-const xorDecrypt = (b64: string, password: string): string => {
-  const raw = atob(b64);
-  const encoded = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) encoded[i] = raw.charCodeAt(i);
-  const key = new TextEncoder().encode(password);
-  const result = new Uint8Array(encoded.length);
-  for (let i = 0; i < encoded.length; i++) result[i] = encoded[i] ^ key[i % key.length];
-  return new TextDecoder().decode(result);
-};
 
 interface CaseEvolution {
   verbaleId: string;
@@ -64,14 +47,14 @@ const DatabaseDashboard = () => {
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [lockPassword, setLockPassword] = useState("");
-  const [importPassword, setImportPassword] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [password, setPassword] = useState("");
 
   const fetchAll = () => {
     setSpeakers(getSpeakers());
     setTranscriptions(getTranscriptions());
     setPersistentCases(getPersistentCases());
+    toast.success("Dati aggiornati");
   };
 
   const loadCaseEvolution = (caseItem: PersistentCase) => {
@@ -139,32 +122,23 @@ const DatabaseDashboard = () => {
     fetchAll();
   };
 
-  const handleExportAll = () => {
-    if (!lockPassword.trim()) { toast.error("Inserire una password"); return; }
-    const allData = { transcriptions: getTranscriptions(), speakers: getSpeakers(), cases: getPersistentCases(), exportedAt: new Date().toISOString(), version: 1 };
-    const json = JSON.stringify(allData);
-    const encrypted = xorEncrypt(json, lockPassword);
-    const blob = new Blob([JSON.stringify({ locked: true, data: encrypted })], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `verbali_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Backup completo esportato");
-    setExportDialogOpen(false);
-    setLockPassword("");
+  const handleExportAll = async () => {
+    if (!password.trim()) { toast.error("Inserire una password"); return; }
+    try {
+      await exportAllDataGzip(password);
+      toast.success("Backup esportato come GZIP crittografato");
+      setExportDialogOpen(false);
+      setPassword("");
+    } catch (err: any) {
+      toast.error("Errore durante l'esportazione");
+    }
   };
 
   const handleImportAll = async () => {
     if (!importFile) { toast.error("Selezionare un file"); return; }
-    if (!importPassword.trim()) { toast.error("Inserire la password"); return; }
+    if (!password.trim()) { toast.error("Inserire la password"); return; }
     try {
-      const text = await importFile.text();
-      const json = JSON.parse(text);
-      if (!json.locked || !json.data) { toast.error("File non valido"); return; }
-      const decrypted = xorDecrypt(json.data, importPassword);
-      const data = JSON.parse(decrypted);
+      const data = await importAllDataGzip(importFile, password);
       let imported = 0;
       if (Array.isArray(data.transcriptions)) {
         data.transcriptions.forEach((t: Transcription) => saveTranscription(t));
@@ -174,18 +148,18 @@ const DatabaseDashboard = () => {
         saveSpeakers(data.speakers);
         imported += data.speakers.length;
       }
-      if (data.transcription && !data.transcriptions) {
-        saveTranscription(data.transcription);
-        imported += 1;
+      if (Array.isArray(data.cases)) {
+        savePersistentCases(data.cases);
+        imported += data.cases.length;
       }
       toast.success(`Importati ${imported} elementi`);
+      setImportDialogOpen(false);
+      setImportFile(null);
+      setPassword("");
       window.location.reload();
     } catch {
       toast.error("Password errata o file corrotto");
     }
-    setImportDialogOpen(false);
-    setImportPassword("");
-    setImportFile(null);
   };
 
   const openCasesCount = persistentCases.filter(c => c.is_open).length;
@@ -448,27 +422,27 @@ const DatabaseDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+      <Dialog open={exportDialogOpen} onOpenChange={(open) => { setExportDialogOpen(open); if (!open) setPassword(""); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Esporta Backup Completo</DialogTitle>
-            <DialogDescription>Esporta tutti i verbali, partecipanti e dati dell'app protetti con password.</DialogDescription>
+            <DialogDescription>Esporta tutti i verbali, partecipanti e dati come file GZIP crittografato.</DialogDescription>
           </DialogHeader>
-          <Input type="password" placeholder="Password..." value={lockPassword} onChange={(e) => setLockPassword(e.target.value)} />
+          <Input type="password" placeholder="Password di crittografia..." value={password} onChange={(e) => setPassword(e.target.value)} />
           <DialogFooter>
-            <Button onClick={handleExportAll} className="gap-1.5"><Lock className="h-4 w-4" /> Esporta</Button>
+            <Button onClick={handleExportAll} className="gap-1.5"><FileDown className="h-4 w-4" /> Esporta</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+      <Dialog open={importDialogOpen} onOpenChange={(open) => { setImportDialogOpen(open); if (!open) { setPassword(""); setImportFile(null); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Importa Backup</DialogTitle>
             <DialogDescription>Seleziona il file di backup e inserisci la password.</DialogDescription>
           </DialogHeader>
-          <Input type="file" accept=".json" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
-          <Input type="password" placeholder="Password..." value={importPassword} onChange={(e) => setImportPassword(e.target.value)} />
+          <Input type="file" accept=".gz.enc,.gz,.gzip" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
+          <Input type="password" placeholder="Password di crittografia..." value={password} onChange={(e) => setPassword(e.target.value)} />
           <DialogFooter>
             <Button onClick={handleImportAll} className="gap-1.5"><Upload className="h-4 w-4" /> Importa</Button>
           </DialogFooter>

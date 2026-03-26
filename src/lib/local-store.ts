@@ -1,5 +1,7 @@
 // Simple localStorage-based store for transcriptions, speakers, and cases
 
+import pako from "pako";
+
 export interface Speaker {
   id: string;
   full_name: string;
@@ -143,17 +145,85 @@ export function deletePersistentCase(id: string): void {
 
 // ── Backup/Restore ──
 
-export function exportAllData(): string {
-  return JSON.stringify({
+function getUtcDateStr(): string {
+  const d = new Date();
+  return d.toISOString().replace("T", "_").replace(/:/g, "-").slice(0, 19);
+}
+
+function gzipAndDownload(data: string, filename: string): void {
+  const compressed = pako.gzip(data);
+  const blob = new Blob([compressed], { type: "application/gzip" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function gunzipFile(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const decompressed = pako.ungzip(new Uint8Array(buffer), { to: "string" });
+  return decompressed;
+}
+
+async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptData(data: string, password: string): Promise<ArrayBuffer> {
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(data));
+  const result = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+  result.set(salt, 0);
+  result.set(iv, salt.length);
+  result.set(new Uint8Array(encrypted), salt.length + iv.length);
+  return result.buffer;
+}
+
+async function decryptData(buffer: ArrayBuffer, password: string): Promise<string> {
+  const data = new Uint8Array(buffer);
+  const salt = data.slice(0, 16);
+  const iv = data.slice(16, 28);
+  const encrypted = data.slice(28);
+  const key = await deriveKey(password, salt);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
+  return new TextDecoder().decode(decrypted);
+}
+
+export async function exportAllDataGzip(password: string): Promise<void> {
+  const data = JSON.stringify({
     transcriptions: getTranscriptions(),
     speakers: getSpeakers(),
     cases: getPersistentCases(),
-  }, null, 2);
+    exported_at: new Date().toISOString(),
+    version: 1,
+  });
+  const encrypted = await encryptData(data, password);
+  const compressed = pako.gzip(new Uint8Array(encrypted));
+  const blob = new Blob([compressed], { type: "application/gzip" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `verbali_backup_${getUtcDateStr()}.gz.enc`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-export function importAllData(json: string): void {
-  const data = JSON.parse(json);
-  if (data.transcriptions) localStorage.setItem(TRANSCRIPTIONS_KEY, JSON.stringify(data.transcriptions));
-  if (data.speakers) localStorage.setItem(SPEAKERS_KEY, JSON.stringify(data.speakers));
-  if (data.cases) localStorage.setItem(CASES_KEY, JSON.stringify(data.cases));
+export async function importAllDataGzip(file: File, password: string): Promise<{ transcriptions: Transcription[]; speakers: Speaker[]; cases: PersistentCase[] }> {
+  const buffer = await file.arrayBuffer();
+  const decompressed = pako.ungzip(new Uint8Array(buffer));
+  const json = await decryptData(decompressed.buffer, password);
+  return JSON.parse(json);
 }
