@@ -9,10 +9,12 @@ RUN dpkg --add-architecture i386 && \
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm install --ignore-scripts
 
 COPY . .
 
 RUN npm run build
 
 RUN npx electron-builder --win --x64
+
+CMD ["cp", "-r", "/app/release/.", "/output/"]

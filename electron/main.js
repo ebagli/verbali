@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol } = require("electron");
+const { app, BrowserWindow } = require("electron");
 const path = require("path");
 
 function createWindow() {
@@ -8,20 +8,21 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false,
     },
   });
 
-  win.loadFile(path.join(__dirname, "../dist/index.html"));
+  win.loadFile(path.join(__dirname, "../dist/index.html")).catch((err) => {
+    console.error("Failed to load index.html:", err);
+  });
+
+  win.webContents.on("did-fail-load", (event, errorCode, errorDescription) => {
+    console.error("Page failed to load:", errorCode, errorDescription);
+  });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  app.quit();
 });

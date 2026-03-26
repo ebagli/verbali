@@ -1,8 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "0.0.1",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -107,7 +106,8 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "public/favicon.ico"
+      "icon": "public/favicon.ico",
+      "cscLink": null
     }
   }
 }
