@@ -1,11 +1,11 @@
-import { useState, useRef, useCallback } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { Mic, Square, Loader2, Upload } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { callGeminiWithAudio, hasGeminiApiKey, parseGeminiJson } from "@/lib/gemini";
 import { saveTranscription, type Transcription, type TranscriptSegment } from "@/lib/local-store";
-import { callGeminiWithAudio, parseGeminiJson, hasGeminiApiKey } from "@/lib/gemini";
+import { Loader2, Mic, Square, Upload } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 interface Props {
   open: boolean;
@@ -74,13 +74,21 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       const mimeType = blob.type || "audio/webm";
       const audioBase64 = await blobToBase64(blob);
 
-      const prompt = `Trascrivi questo audio in italiano con diarizzazione degli speaker.
-Identifica i diversi parlanti e assegna etichette come speaker_0, speaker_1, etc.
-Rispondi SOLO con un JSON valido nel formato:
-{
-  "segments": [{"speaker": "speaker_0", "text": "...", "start": 0, "end": 5}],
-  "text": "testo completo..."
-}`;
+      const prompt = `Trascrivi l'audio fornito seguendo rigorosamente queste regole:
+    1. Lingua: Italiano.
+    2. Diarizzazione: Identifica i diversi parlanti (speaker_0, speaker_1, etc.).
+    3. Formato: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido. Non aggiungere saluti o spiegazioni.
+
+    Struttura richiesta:
+    {
+      "segments": [
+        { "speaker": "speaker_0", "text": "...", "start": 0.0, "end": 5.0 },
+        { "speaker": "speaker_1", "text": "...", "start": 5.1, "end": 10.0 }
+      ],
+      "text": "Il testo completo unito..."
+    }
+
+    ATTENZIONE: Se non riesci a trascrivere, restituisci un JSON con campi vuoti, mai testo libero.`;
 
       const responseText = await callGeminiWithAudio(audioBase64, mimeType, prompt);
       const result = parseGeminiJson(responseText);
@@ -126,11 +134,10 @@ Rispondi SOLO con un JSON valido nel formato:
             <>
               <button
                 onClick={recording ? stopRecording : startRecording}
-                className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${
-                  recording
-                    ? "bg-destructive text-destructive-foreground animate-pulse-recording"
-                    : "bg-primary text-primary-foreground hover:bg-primary/90"
-                }`}
+                className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${recording
+                  ? "bg-destructive text-destructive-foreground animate-pulse-recording"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
+                  }`}
               >
                 {recording ? <Square className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
               </button>

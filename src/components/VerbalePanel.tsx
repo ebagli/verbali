@@ -1,16 +1,17 @@
-import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
-import { Plus, Sparkles, Download, FileText, Clock, Building2, Users, MessageSquare, CheckCircle } from "lucide-react";
-import { toast } from "sonner";
-import { VerbaleCaseCard } from "./VerbaleCaseCard";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { exportVerbaleDocx } from "@/lib/docx-export";
+import { callGemini, hasGeminiApiKey, parseGeminiJson } from "@/lib/gemini";
+import { addSpeaker, createPersistentCase, getPersistentCases, getSpeakers, getTranscription, saveTranscription, updatePersistentCase, type Speaker, type TranscriptSegment, type VerbaleState } from "@/lib/local-store";
 import { type ReportCase, type ReportData } from "@/lib/report-template";
+import { Building2, CheckCircle, Clock, Download, FileText, MessageSquare, Plus, Sparkles, Users } from "lucide-react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { toast } from "sonner";
 import { resolveDisplayName } from "./SpeakerMappingCard";
-import { getTranscription, saveTranscription, getSpeakers, getPersistentCases, createPersistentCase, updatePersistentCase, type Speaker, type TranscriptSegment, type VerbaleState } from "@/lib/local-store";
-import { callGemini, parseGeminiJson, hasGeminiApiKey } from "@/lib/gemini";
+import { VerbaleCaseCard } from "./VerbaleCaseCard";
 
 interface Props {
   segments: TranscriptSegment[];
@@ -34,6 +35,9 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
   const [nextMeetingTime, setNextMeetingTime] = useState("");
   const [extracting, setExtracting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newTitle, setNewTitle] = useState("");
   const loadedRef = useRef(false);
   const [persistentCases, setPersistentCases] = useState<{ id: string; patient_name: string; is_open: boolean }[]>([]);
 
@@ -140,19 +144,39 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
         })
         .join("\n");
 
-      const systemPrompt = `Sei un assistente legale esperto specializzato in sinistri sanitari. Analizza la trascrizione di un CVS e identifica OGNI pratica/paziente discusso.
+      const systemPrompt = `Sei un assistente legale esperto in malpractice sanitaria e gestione sinistri (CVS). 
+        Trasforma la trascrizione in un report JSON strutturato seguendo queste regole:
 
-Per ogni caso estrai:
-- patient_name: COGNOME NOME in MAIUSCOLO
-- description: Riassunto DETTAGLIATO (5-8 frasi, tono medico-legale)
-- is_open: true se il caso è ancora aperto/in corso, false se chiuso/archiviato
-- suggested_outcome: "istruttoria"|"riserva"|"prematuro"|"sviluppi"|"archiviazione"|"proposta_transattiva"|""
-- outcome_extra: info aggiuntive
+        1. Identifica OGNI singolo paziente/pratica.
+        2. patient_name: "COGNOME NOME" (es. ROSSI MARIO). Se ignoto: "IGNOTO".
+        3. description: Analisi tecnica (5-8 frasi). Includere: dinamica, presunti profili di colpa, nesso causale.
+        4. is_open: true (default), false solo se chiuso/archiviato.
+        5. suggested_outcome: SOLO tra ["istruttoria", "riserva", "prematuro", "sviluppi", "archiviazione", "proposta_transattiva"].
 
-Estrai anche: facility_name, meeting_location, start_time (HH:MM), closing_time (HH:MM), general_discussion, next_meeting_date (YYYY-MM-DD), next_meeting_time (HH:MM)
+        REQUISITI TECNICI:
+        - Rispondi SOLO con JSON valido.
+        - Se mancano dati, usa null o "".
+        - Esegui correttamente l'escape di eventuali virgolette nel testo.
 
-NON inventare. Rispondi SOLO con JSON valido:
-{"cases":[...],"facility_name":"...","meeting_location":"...","start_time":"...","closing_time":"...","general_discussion":"...","next_meeting_date":"...","next_meeting_time":"..."}`;
+        STRUTTURA JSON:
+        {
+          "cases": [
+            {
+              "patient_name": "STRING",
+              "description": "STRING",
+              "is_open": BOOLEAN,
+              "suggested_outcome": "STRING",
+              "outcome_extra": "STRING"
+            }
+          ],
+          "facility_name": "STRING",
+          "meeting_location": "STRING",
+          "start_time": "HH:MM",
+          "closing_time": "HH:MM",
+          "general_discussion": "STRING",
+          "next_meeting_date": "YYYY-MM-DD",
+          "next_meeting_time": "HH:MM"
+        }`;
 
       const responseText = await callGemini(`${systemPrompt}\n\nTrascrizione:\n${fullText}`, { jsonMode: true });
       const data = parseGeminiJson(responseText);
@@ -230,12 +254,51 @@ NON inventare. Rispondi SOLO con JSON valido:
     );
   };
 
-  const addNewAttendee = () => {
-    const name = prompt("Nome partecipante:");
-    if (name?.trim()) {
-      const label = name.trim().toLowerCase().replace(/\s+/g, "_");
-      setSelectedAttendees((prev) => [...prev, label]);
+  const toggleAttendeeGroup = (speakerLabels: string[]) => {
+    setSelectedAttendees((prev) => {
+      const anySelected = speakerLabels.some((spk) => prev.includes(spk));
+      if (anySelected) {
+        return prev.filter((a) => !speakerLabels.includes(a));
+      } else {
+        return [...prev, ...speakerLabels.filter((spk) => !prev.includes(spk))];
+      }
+    });
+  };
+
+  const isSelected = (speakerLabels: string[]) => speakerLabels.some((spk) => selectedAttendees.includes(spk));
+
+  const uniqueAttendeeEntries = (() => {
+    const seen = new Map<string, { label: string; speakerLabels: string[] }>();
+    for (const spk of segmentSpeakers) {
+      const mappedId = speakerMapping[spk];
+      const key = mappedId || spk;
+      const speaker = mappedId ? speakers.find((s) => s.id === mappedId) : null;
+      const label = speaker ? displayName(speaker) : spk;
+      if (!seen.has(key)) {
+        seen.set(key, { label, speakerLabels: [spk] });
+      } else {
+        seen.get(key)!.speakerLabels.push(spk);
+      }
     }
+    return Array.from(seen.values());
+  })();
+
+  const addNewAttendee = () => {
+    setNewName("");
+    setNewTitle("");
+    setAddDialogOpen(true);
+  };
+
+  const handleConfirmAddAttendee = () => {
+    if (!newName.trim()) {
+      toast.error("Inserire il nome del partecipante");
+      return;
+    }
+    const label = newName.trim().toLowerCase().replace(/\s+/g, "_");
+    addSpeaker({ id: crypto.randomUUID(), full_name: newName.trim(), title: newTitle.trim() });
+    setSelectedAttendees((prev) => [...prev, label]);
+    setAddDialogOpen(false);
+    toast.success("Partecipante aggiunto alla rubrica");
   };
 
   return (
@@ -267,7 +330,7 @@ NON inventare. Rispondi SOLO con JSON valido:
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Struttura</label>
-              <Input value={facilityName} onChange={(e) => { setFacilityName(e.target.value); if (e.target.value.trim()) setValidationErrors((p) => ({...p, facilityName: false})); }} placeholder="Nome della struttura..." className={validationErrors.facilityName ? "border-destructive ring-1 ring-destructive" : ""} />
+              <Input value={facilityName} onChange={(e) => { setFacilityName(e.target.value); if (e.target.value.trim()) setValidationErrors((p) => ({ ...p, facilityName: false })); }} placeholder="Nome della struttura..." className={validationErrors.facilityName ? "border-destructive ring-1 ring-destructive" : ""} />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -298,16 +361,11 @@ NON inventare. Rispondi SOLO con JSON valido:
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {segmentSpeakers.map((spk) => {
-              const mappedId = speakerMapping[spk];
-              const speaker = mappedId ? speakers.find((s) => s.id === mappedId) : null;
-              const label = speaker ? displayName(speaker) : spk;
-              return (
-                <Button key={spk} variant={selectedAttendees.includes(spk) ? "default" : "outline"} size="sm" onClick={() => toggleAttendee(spk)} className="text-xs">
-                  {label}
-                </Button>
-              );
-            })}
+            {uniqueAttendeeEntries.map((entry) => (
+              <Button key={entry.speakerLabels.join(",")} variant={isSelected(entry.speakerLabels) ? "default" : "outline"} size="sm" onClick={() => toggleAttendeeGroup(entry.speakerLabels)} className="text-xs">
+                {entry.label}
+              </Button>
+            ))}
             {selectedAttendees.filter((a) => !segmentSpeakers.includes(a)).map((a) => (
               <Button key={a} variant="default" size="sm" onClick={() => toggleAttendee(a)} className="text-xs">{a}</Button>
             ))}
@@ -411,6 +469,29 @@ NON inventare. Rispondi SOLO con JSON valido:
           <Input type="time" value={nextMeetingTime} onChange={(e) => setNextMeetingTime(e.target.value)} />
         </div>
       </div>
+
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aggiungi Partecipante</DialogTitle>
+            <DialogDescription>Inserisci i dati del nuovo partecipante. Verrà aggiunto alla rubrica.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Titolo (es. Dott.)</label>
+              <Input placeholder="Dott." value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Nome Cognome</label>
+              <Input placeholder="Mario Rossi" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleConfirmAddAttendee()} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Annulla</Button>
+            <Button onClick={handleConfirmAddAttendee}>Aggiungi</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });
