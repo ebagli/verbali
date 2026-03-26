@@ -10,9 +10,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Save, Plus, X, Loader2 } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbalePanel } from "@/components/VerbalePanel";
-import { exportTranscriptDocx } from "@/lib/docx-export";
-import { getTranscription, saveTranscription, deleteTranscription, getSpeakers, type TranscriptSegment } from "@/lib/local-store";
-import { db } from "@/lib/db-backend";
+import { getTranscription, saveTranscription, getSpeakers, type TranscriptSegment } from "@/lib/local-store";
 
 const TranscriptionEditor = () => {
   const { id } = useParams<{ id: string }>();
@@ -42,11 +40,9 @@ const TranscriptionEditor = () => {
   const getDisplayName = (label: string) => resolveDisplayName(label, speakerMapping, speakers);
 
   const handleSave = async () => {
-    // 1. Save locally first
     const t = getTranscription(id!);
     if (!t) return;
 
-    // Get verbale state from the panel
     const verbaleState = verbalePanelRef.current?.getVerbaleState?.();
     const reportHtml = verbaleState ? JSON.stringify(verbaleState) : t.report_html;
 
@@ -58,28 +54,14 @@ const TranscriptionEditor = () => {
       report_html: reportHtml,
       summary: verbaleState?.generalDiscussion?.slice(0, 200) || t.summary || "",
     };
-    saveTranscription(updated);
 
-    // 2. Upsert to DB (cloud or local)
     setSaving(true);
     try {
-      const user = await db.auth.getUser();
-      const userId = user?.id || "00000000-0000-0000-0000-000000000000";
-
-      await db.transcriptions.upsert({
-        id: id!,
-        user_id: userId,
-        conversation_date: conversationDate,
-        transcript_json: segments as any,
-        speaker_mapping: speakerMapping as any,
-        report_html: reportHtml,
-        summary: updated.summary,
-      });
-
-      toast.success("Salvato nel database!");
+      saveTranscription(updated);
+      toast.success("Salvato!");
       navigate("/");
     } catch (err: any) {
-      console.error("DB save error:", err);
+      console.error("Save error:", err);
       toast.error("Errore: " + (err.message || "Salvataggio fallito"));
     }
     setSaving(false);
@@ -102,8 +84,6 @@ const TranscriptionEditor = () => {
   };
 
   const uniqueSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
-
-
 
   if (loading) {
     return (
@@ -217,8 +197,6 @@ const TranscriptionEditor = () => {
           />
         </div>
       </div>
-
-
     </div>
   );
 };

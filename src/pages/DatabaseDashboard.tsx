@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,18 +10,16 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Users, FileText, RefreshCw, Clock, FileUp, FileDown, Lock, Upload, FolderOpen, Plus, Trash2, Pencil, ArrowLeft, ChevronRight } from "lucide-react";
-import { db, type TranscriptionRow } from "@/lib/db-backend";
+import { Users, FileText, Clock, FileUp, FileDown, Lock, Upload, FolderOpen, Plus, Trash2, Pencil, ArrowLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
   getTranscriptions, getSpeakers, saveTranscription, saveSpeakers,
-  type Transcription, type Speaker, type VerbaleState,
+  getPersistentCases, type Transcription, type Speaker, type VerbaleState, type PersistentCase,
 } from "@/lib/local-store";
 import type { ReportCase } from "@/lib/report-template";
 import { REPORT_TEMPLATE } from "@/lib/report-template";
 
-// XOR encrypt/decrypt
 const xorEncrypt = (data: string, password: string): string => {
   const encoded = new TextEncoder().encode(data);
   const key = new TextEncoder().encode(password);
@@ -40,14 +38,6 @@ const xorDecrypt = (b64: string, password: string): string => {
   return new TextDecoder().decode(result);
 };
 
-interface PersistentCase {
-  id: string;
-  patient_name: string;
-  is_open: boolean;
-  created_at: string;
-  user_id: string;
-}
-
 interface CaseEvolution {
   verbaleId: string;
   verbaleDate: string;
@@ -59,54 +49,35 @@ interface CaseEvolution {
 
 const DatabaseDashboard = () => {
   const navigate = useNavigate();
-  const [dbSpeakers, setDbSpeakers] = useState<Speaker[]>([]);
-  const [transcriptions, setTranscriptions] = useState<TranscriptionRow[]>([]);
-  const [persistentCases, setPersistentCases] = useState<PersistentCase[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [speakers, setSpeakers] = useState<Speaker[]>(getSpeakers());
+  const [transcriptions, setTranscriptions] = useState(getTranscriptions());
+  const [persistentCases, setPersistentCases] = useState(getPersistentCases());
 
-  // Speaker CRUD
   const [newSpeakerName, setNewSpeakerName] = useState("");
   const [newSpeakerTitle, setNewSpeakerTitle] = useState("");
   const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null);
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
 
-  // Case detail view
   const [selectedCase, setSelectedCase] = useState<PersistentCase | null>(null);
   const [caseEvolution, setCaseEvolution] = useState<CaseEvolution[]>([]);
 
-  // Export/Import state
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [lockPassword, setLockPassword] = useState("");
   const [importPassword, setImportPassword] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
 
-  const fetchAll = async () => {
-    setLoading(true);
-    try {
-      const [spk, trx, cases] = await Promise.all([
-        db.speakers.list(),
-        db.transcriptions.list(),
-        db.cases.list(),
-      ]);
-      setDbSpeakers(spk);
-      setTranscriptions(trx);
-      setPersistentCases(cases);
-    } catch (err: any) {
-      toast.error("Errore nel caricamento dei dati: " + (err.message || ""));
-    }
-    setLoading(false);
+  const fetchAll = () => {
+    setSpeakers(getSpeakers());
+    setTranscriptions(getTranscriptions());
+    setPersistentCases(getPersistentCases());
   };
 
-  useEffect(() => { fetchAll(); }, []);
-
-  // Load case evolution from transcriptions
   const loadCaseEvolution = (caseItem: PersistentCase) => {
     setSelectedCase(caseItem);
-    const allLocal = getTranscriptions();
     const evolution: CaseEvolution[] = [];
-    allLocal.forEach((t) => {
+    getTranscriptions().forEach((t) => {
       if (t.report_html) {
         try {
           const state: VerbaleState = JSON.parse(t.report_html);
@@ -129,38 +100,24 @@ const DatabaseDashboard = () => {
     setCaseEvolution(evolution);
   };
 
-  // Load a verbale from DB into localStorage, then navigate to editor
-  const loadVerbaleFromDb = async (verbaleId: string) => {
-    try {
-      const data = await db.transcriptions.get(verbaleId);
-      if (!data) { toast.error("Impossibile caricare il verbale"); return; }
-      const localTranscription: Transcription = {
-        id: data.id, created_at: data.created_at, conversation_date: data.conversation_date,
-        transcript_json: (data.transcript_json as any) || [], speaker_mapping: (data.speaker_mapping as Record<string, string>) || {},
-        summary: data.summary || "", report_html: data.report_html || "",
-      };
-      saveTranscription(localTranscription);
-      navigate(`/transcription/${verbaleId}`);
-    } catch { toast.error("Errore nel caricamento"); }
-  };
-
-  // Speaker CRUD handlers
-  const handleAddSpeaker = async () => {
+  const handleAddSpeaker = () => {
     if (!newSpeakerName.trim()) return;
-    try {
-      await db.speakers.create({ full_name: newSpeakerName.trim(), title: newSpeakerTitle.trim(), user_id: "00000000-0000-0000-0000-000000000000" });
-      setNewSpeakerName(""); setNewSpeakerTitle("");
-      toast.success("Partecipante aggiunto");
-      fetchAll();
-    } catch (err: any) { toast.error(err.message); }
+    const newSpeaker: Speaker = {
+      id: crypto.randomUUID(),
+      full_name: newSpeakerName.trim(),
+      title: newSpeakerTitle.trim(),
+    };
+    saveSpeakers([...getSpeakers(), newSpeaker]);
+    setNewSpeakerName("");
+    setNewSpeakerTitle("");
+    toast.success("Partecipante aggiunto");
+    fetchAll();
   };
 
-  const handleDeleteSpeaker = async (id: string) => {
-    try {
-      await db.speakers.delete(id);
-      toast.success("Partecipante rimosso");
-      fetchAll();
-    } catch (err: any) { toast.error(err.message); }
+  const handleDeleteSpeaker = (id: string) => {
+    saveSpeakers(getSpeakers().filter(s => s.id !== id));
+    toast.success("Partecipante rimosso");
+    fetchAll();
   };
 
   const startEditSpeaker = (s: Speaker) => {
@@ -169,31 +126,34 @@ const DatabaseDashboard = () => {
     setEditTitle(s.title);
   };
 
-  const handleSaveEditSpeaker = async () => {
+  const handleSaveEditSpeaker = () => {
     if (!editingSpeaker || !editName.trim()) return;
-    try {
-      // Delete and recreate since we don't have an update method for speakers
-      await db.speakers.delete(editingSpeaker.id);
-      await db.speakers.create({ full_name: editName.trim(), title: editTitle.trim(), user_id: "00000000-0000-0000-0000-000000000000" });
-      setEditingSpeaker(null);
-      toast.success("Partecipante aggiornato");
-      fetchAll();
-    } catch (err: any) { toast.error(err.message); }
+    const all = getSpeakers();
+    const idx = all.findIndex(s => s.id === editingSpeaker.id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], full_name: editName.trim(), title: editTitle.trim() };
+      saveSpeakers(all);
+    }
+    setEditingSpeaker(null);
+    toast.success("Partecipante aggiornato");
+    fetchAll();
   };
 
-  // Export/Import
   const handleExportAll = () => {
     if (!lockPassword.trim()) { toast.error("Inserire una password"); return; }
-    const allData = { transcriptions: getTranscriptions(), speakers: getSpeakers(), exportedAt: new Date().toISOString(), version: 1 };
+    const allData = { transcriptions: getTranscriptions(), speakers: getSpeakers(), cases: getPersistentCases(), exportedAt: new Date().toISOString(), version: 1 };
     const json = JSON.stringify(allData);
     const encrypted = xorEncrypt(json, lockPassword);
     const blob = new Blob([JSON.stringify({ locked: true, data: encrypted })], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `verbali_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    a.click();
+    URL.revokeObjectURL(url);
     toast.success("Backup completo esportato");
-    setExportDialogOpen(false); setLockPassword("");
+    setExportDialogOpen(false);
+    setLockPassword("");
   };
 
   const handleImportAll = async () => {
@@ -206,13 +166,26 @@ const DatabaseDashboard = () => {
       const decrypted = xorDecrypt(json.data, importPassword);
       const data = JSON.parse(decrypted);
       let imported = 0;
-      if (Array.isArray(data.transcriptions)) { data.transcriptions.forEach((t: Transcription) => saveTranscription(t)); imported += data.transcriptions.length; }
-      if (Array.isArray(data.speakers)) { saveSpeakers(data.speakers); imported += data.speakers.length; }
-      if (data.transcription && !data.transcriptions) { saveTranscription(data.transcription); imported += 1; }
+      if (Array.isArray(data.transcriptions)) {
+        data.transcriptions.forEach((t: Transcription) => saveTranscription(t));
+        imported += data.transcriptions.length;
+      }
+      if (Array.isArray(data.speakers)) {
+        saveSpeakers(data.speakers);
+        imported += data.speakers.length;
+      }
+      if (data.transcription && !data.transcriptions) {
+        saveTranscription(data.transcription);
+        imported += 1;
+      }
       toast.success(`Importati ${imported} elementi`);
       window.location.reload();
-    } catch { toast.error("Password errata o file corrotto"); }
-    setImportDialogOpen(false); setImportPassword(""); setImportFile(null);
+    } catch {
+      toast.error("Password errata o file corrotto");
+    }
+    setImportDialogOpen(false);
+    setImportPassword("");
+    setImportFile(null);
   };
 
   const openCasesCount = persistentCases.filter(c => c.is_open).length;
@@ -222,7 +195,6 @@ const DatabaseDashboard = () => {
     return o ? o.label : id || "—";
   };
 
-  // Case detail view
   if (selectedCase) {
     return (
       <div className="flex-1 overflow-y-auto">
@@ -261,7 +233,7 @@ const DatabaseDashboard = () => {
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground">{ev.description || "Nessuna descrizione"}</p>
-                      <Button variant="ghost" size="sm" onClick={() => loadVerbaleFromDb(ev.verbaleId)} className="text-xs gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/transcription/${ev.verbaleId}`)} className="text-xs gap-1">
                         <FileText className="h-3 w-3" /> Apri verbale
                       </Button>
                     </div>
@@ -287,13 +259,12 @@ const DatabaseDashboard = () => {
             <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)} className="gap-1.5">
               <FileDown className="h-3.5 w-3.5" /> Esporta JSON
             </Button>
-            <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading} className="gap-1.5">
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Aggiorna
+            <Button variant="outline" size="sm" onClick={fetchAll} className="gap-1.5">
+              <Users className="h-3.5 w-3.5" /> Aggiorna
             </Button>
           </div>
         </div>
 
-        {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
@@ -301,7 +272,7 @@ const DatabaseDashboard = () => {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{dbSpeakers.length}</p>
+                <p className="text-2xl font-bold">{speakers.length}</p>
                 <p className="text-xs text-muted-foreground">Partecipanti</p>
               </div>
             </CardContent>
@@ -330,7 +301,6 @@ const DatabaseDashboard = () => {
           </Card>
         </div>
 
-        {/* Tabs */}
         <Tabs defaultValue="speakers">
           <TabsList>
             <TabsTrigger value="speakers" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Partecipanti</TabsTrigger>
@@ -338,14 +308,12 @@ const DatabaseDashboard = () => {
             <TabsTrigger value="verbali" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Verbali</TabsTrigger>
           </TabsList>
 
-          {/* Partecipanti with CRUD */}
           <TabsContent value="speakers">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Rubrica Partecipanti</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Add form */}
                 <div className="flex gap-2">
                   <Input placeholder="Titolo (es. Dott.)" value={newSpeakerTitle} onChange={(e) => setNewSpeakerTitle(e.target.value)} className="w-32" />
                   <Input placeholder="Nome Cognome" value={newSpeakerName} onChange={(e) => setNewSpeakerName(e.target.value)} className="flex-1"
@@ -355,7 +323,7 @@ const DatabaseDashboard = () => {
                   </Button>
                 </div>
 
-                {dbSpeakers.length === 0 ? (
+                {speakers.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">Nessun partecipante registrato.</p>
                 ) : (
                   <Table>
@@ -367,7 +335,7 @@ const DatabaseDashboard = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {dbSpeakers.map((s) => (
+                      {speakers.map((s) => (
                         <TableRow key={s.id}>
                           <TableCell className="text-muted-foreground">{s.title || "—"}</TableCell>
                           <TableCell className="font-medium">{s.full_name}</TableCell>
@@ -390,7 +358,6 @@ const DatabaseDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* Casi (persistent) */}
           <TabsContent value="cases">
             <Card>
               <CardHeader className="pb-3">
@@ -433,7 +400,6 @@ const DatabaseDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* Verbali */}
           <TabsContent value="verbali">
             <Card>
               <CardHeader className="pb-3">
@@ -453,7 +419,7 @@ const DatabaseDashboard = () => {
                     </TableHeader>
                     <TableBody>
                       {transcriptions.map((t) => (
-                        <TableRow key={t.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadVerbaleFromDb(t.id)}>
+                        <TableRow key={t.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/transcription/${t.id}`)}>
                           <TableCell className="font-medium">{new Date(t.conversation_date).toLocaleDateString()}</TableCell>
                           <TableCell className="text-muted-foreground max-w-[300px] truncate">{t.summary?.slice(0, 80) || "—"}</TableCell>
                           <TableCell className="text-muted-foreground text-xs">{new Date(t.created_at).toLocaleDateString()}</TableCell>
@@ -468,7 +434,6 @@ const DatabaseDashboard = () => {
         </Tabs>
       </div>
 
-      {/* Edit speaker dialog */}
       <Dialog open={!!editingSpeaker} onOpenChange={(open) => !open && setEditingSpeaker(null)}>
         <DialogContent>
           <DialogHeader>
@@ -483,7 +448,6 @@ const DatabaseDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Export dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -497,7 +461,6 @@ const DatabaseDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Import dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent>
           <DialogHeader>

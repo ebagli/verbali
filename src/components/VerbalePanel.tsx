@@ -3,15 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
-import { Plus, Sparkles, Download, FileText, Save, Clock, Building2, Users, ListOrdered, MessageSquare, CheckCircle } from "lucide-react";
+import { Plus, Sparkles, Download, FileText, Clock, Building2, Users, MessageSquare, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { VerbaleCaseCard } from "./VerbaleCaseCard";
 import { exportVerbaleDocx } from "@/lib/docx-export";
 import { type ReportCase, type ReportData } from "@/lib/report-template";
 import { resolveDisplayName } from "./SpeakerMappingCard";
-import { getTranscription, saveTranscription, getSpeakers, type Speaker, type TranscriptSegment, type VerbaleState } from "@/lib/local-store";
+import { getTranscription, saveTranscription, getSpeakers, getPersistentCases, createPersistentCase, updatePersistentCase, type Speaker, type TranscriptSegment, type VerbaleState } from "@/lib/local-store";
 import { callGemini, parseGeminiJson, hasGeminiApiKey } from "@/lib/gemini";
-import { db } from "@/lib/db-backend";
 
 interface Props {
   segments: TranscriptSegment[];
@@ -38,12 +37,10 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
   const loadedRef = useRef(false);
   const [persistentCases, setPersistentCases] = useState<{ id: string; patient_name: string; is_open: boolean }[]>([]);
 
-  // Load persistent cases
   useEffect(() => {
-    db.cases.list().then(setPersistentCases).catch(() => {});
+    setPersistentCases(getPersistentCases());
   }, []);
 
-  // Unique speakers from segments as attendee chips
   const segmentSpeakers = Array.from(new Set(segments.map((s) => s.speaker))).sort();
 
   useEffect(() => {
@@ -75,32 +72,25 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
 
   useImperativeHandle(ref, () => ({ getVerbaleState }), [getVerbaleState]);
 
-  const saveVerbale = useCallback(async () => {
+  const saveVerbale = useCallback(() => {
     const t = getTranscription(transcriptionId);
     if (!t) return;
 
-    // Create persistent cases for any case without a caseId
-    const user = await db.auth.getUser();
-    const userId = user?.id || "00000000-0000-0000-0000-000000000000";
     const updatedCases = [...cases];
     for (let i = 0; i < updatedCases.length; i++) {
       const c = updatedCases[i];
       if (!c.caseId && c.patientName.trim()) {
-        try {
-          const newId = await db.cases.create({ patient_name: c.patientName.trim(), is_open: c.isOpen, user_id: userId });
-          updatedCases[i] = { ...c, caseId: newId };
-        } catch { /* ignore */ }
+        const newId = createPersistentCase(c.patientName.trim(), c.isOpen);
+        updatedCases[i] = { ...c, caseId: newId };
       } else if (c.caseId) {
-        // Update is_open status on persistent case
-        try { await db.cases.update(c.caseId, { is_open: c.isOpen }); } catch { /* ignore */ }
+        updatePersistentCase(c.caseId, { is_open: c.isOpen });
       }
     }
     setCases(updatedCases);
 
     const state = { ...getVerbaleState(), cases: updatedCases };
     saveTranscription({ ...t, report_html: JSON.stringify(state) });
-    // Refresh persistent cases
-    db.cases.list().then(setPersistentCases).catch(() => {});
+    setPersistentCases(getPersistentCases());
     toast.success("Verbale salvato.");
   }, [transcriptionId, getVerbaleState, cases]);
 
@@ -112,7 +102,6 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
   const addCase = () => setCases((prev) => [...prev, { patientName: "", description: "", outcomeId: "", outcomeExtra: "", isOpen: true, caseId: "" }]);
   const removeCase = (i: number) => setCases((prev) => prev.filter((_, idx) => idx !== i));
 
-  // Match extracted cases against persistent cases by patient name
   const matchCasesToPersistent = (extracted: ReportCase[], existing: { id: string; patient_name: string; is_open: boolean }[]): ReportCase[] => {
     return extracted.map((c) => {
       const nameNorm = c.patientName.trim().toUpperCase();
@@ -121,18 +110,13 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
     });
   };
 
-  // Create persistent case for a case card
-  const handleCreateNewCase = async (index: number) => {
+  const handleCreateNewCase = (index: number) => {
     const c = cases[index];
     if (!c.patientName.trim()) { toast.error("Inserire il nome del paziente"); return; }
-    try {
-      const user = await db.auth.getUser();
-      const userId = user?.id || "00000000-0000-0000-0000-000000000000";
-      const newId = await db.cases.create({ patient_name: c.patientName.trim(), is_open: c.isOpen, user_id: userId });
-      setCases((prev) => prev.map((cc, i) => i === index ? { ...cc, caseId: newId } : cc));
-      setPersistentCases((prev) => [...prev, { id: newId, patient_name: c.patientName.trim(), is_open: c.isOpen }]);
-      toast.success("Caso creato e collegato");
-    } catch (err: any) { toast.error(err.message); }
+    const newId = createPersistentCase(c.patientName.trim(), c.isOpen);
+    setCases((prev) => prev.map((cc, i) => i === index ? { ...cc, caseId: newId } : cc));
+    setPersistentCases((prev) => [...prev, { id: newId, patient_name: c.patientName.trim(), is_open: c.isOpen }]);
+    toast.success("Caso creato e collegato");
   };
 
   const handleAutoFill = async () => {
@@ -182,7 +166,6 @@ NON inventare. Rispondi SOLO con JSON valido:
         caseId: "",
       }));
 
-      // Match against existing persistent cases
       const matched = matchCasesToPersistent(extracted, persistentCases);
 
       if (matched.length === 0) toast.warning("Nessun caso identificato.");
@@ -270,7 +253,6 @@ NON inventare. Rispondi SOLO con JSON valido:
         </div>
       </div>
 
-      {/* INTESTAZIONE */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -305,7 +287,6 @@ NON inventare. Rispondi SOLO con JSON valido:
         </CardContent>
       </Card>
 
-      {/* PARTECIPANTI */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -322,28 +303,18 @@ NON inventare. Rispondi SOLO con JSON valido:
               const speaker = mappedId ? speakers.find((s) => s.id === mappedId) : null;
               const label = speaker ? displayName(speaker) : spk;
               return (
-                <Button
-                  key={spk}
-                  variant={selectedAttendees.includes(spk) ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => toggleAttendee(spk)}
-                  className="text-xs"
-                >
+                <Button key={spk} variant={selectedAttendees.includes(spk) ? "default" : "outline"} size="sm" onClick={() => toggleAttendee(spk)} className="text-xs">
                   {label}
                 </Button>
               );
             })}
-            {/* Show additional attendees not in segments */}
             {selectedAttendees.filter((a) => !segmentSpeakers.includes(a)).map((a) => (
-              <Button key={a} variant="default" size="sm" onClick={() => toggleAttendee(a)} className="text-xs">
-                {a}
-              </Button>
+              <Button key={a} variant="default" size="sm" onClick={() => toggleAttendee(a)} className="text-xs">{a}</Button>
             ))}
           </div>
         </CardContent>
       </Card>
 
-      {/* ORDINE DEL GIORNO */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -363,7 +334,6 @@ NON inventare. Rispondi SOLO con JSON valido:
         </CardContent>
       </Card>
 
-      {/* DISCUSSIONE GENERALE */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -371,7 +341,6 @@ NON inventare. Rispondi SOLO con JSON valido:
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Summary stats */}
           {cases.length > 0 && (
             <div className="rounded-lg bg-muted/50 border border-border p-3 space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Riepilogo Seduta</p>
@@ -396,16 +365,10 @@ NON inventare. Rispondi SOLO con JSON valido:
               </div>
             </div>
           )}
-          <AutoResizeTextarea
-            value={generalDiscussion}
-            onChange={(e) => setGeneralDiscussion(e.target.value)}
-            placeholder="Breve descrizione dell'oggetto della seduta e sintesi della discussione generale..."
-            className="min-h-[100px]"
-          />
+          <AutoResizeTextarea value={generalDiscussion} onChange={(e) => setGeneralDiscussion(e.target.value)} placeholder="Breve descrizione dell'oggetto della seduta e sintesi della discussione generale..." className="min-h-[100px]" />
         </CardContent>
       </Card>
 
-      {/* ESAME CASISTICA */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -427,7 +390,6 @@ NON inventare. Rispondi SOLO con JSON valido:
         </CardContent>
       </Card>
 
-      {/* CHIUSURA E DECISIONI */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -435,16 +397,10 @@ NON inventare. Rispondi SOLO con JSON valido:
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <AutoResizeTextarea
-            value={closingDecisions}
-            onChange={(e) => setClosingDecisions(e.target.value)}
-            placeholder="Decisioni prese e azioni da intraprendere..."
-            className="min-h-[100px]"
-          />
+          <AutoResizeTextarea value={closingDecisions} onChange={(e) => setClosingDecisions(e.target.value)} placeholder="Decisioni prese e azioni da intraprendere..." className="min-h-[100px]" />
         </CardContent>
       </Card>
 
-      {/* PROSSIMO INCONTRO */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Prossimo Incontro Data</label>
@@ -455,7 +411,6 @@ NON inventare. Rispondi SOLO con JSON valido:
           <Input type="time" value={nextMeetingTime} onChange={(e) => setNextMeetingTime(e.target.value)} />
         </div>
       </div>
-
     </div>
   );
 });

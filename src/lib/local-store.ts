@@ -1,4 +1,4 @@
-// Simple localStorage-based store for transcriptions and speakers
+// Simple localStorage-based store for transcriptions, speakers, and cases
 
 export interface Speaker {
   id: string;
@@ -35,11 +35,21 @@ export interface Transcription {
   transcript_json: TranscriptSegment[];
   speaker_mapping: Record<string, string>;
   summary: string;
-  report_html: string; // JSON-serialized VerbaleState
+  report_html: string;
+}
+
+export interface PersistentCase {
+  id: string;
+  patient_name: string;
+  is_open: boolean;
+  created_at: string;
 }
 
 const TRANSCRIPTIONS_KEY = "verbali_transcriptions";
 const SPEAKERS_KEY = "verbali_speakers";
+const CASES_KEY = "verbali_cases";
+
+// ── Transcriptions ──
 
 export function getTranscriptions(): Transcription[] {
   try {
@@ -66,6 +76,8 @@ export function deleteTranscription(id: string): void {
   localStorage.setItem(TRANSCRIPTIONS_KEY, JSON.stringify(all));
 }
 
+// ── Speakers ──
+
 export function getSpeakers(): Speaker[] {
   try {
     return JSON.parse(localStorage.getItem(SPEAKERS_KEY) || "[]");
@@ -88,11 +100,54 @@ export function removeSpeaker(id: string): void {
   saveSpeakers(getSpeakers().filter((s) => s.id !== id));
 }
 
-// Backup/Restore
+// ── Cases ──
+
+export function getPersistentCases(): PersistentCase[] {
+  try {
+    return JSON.parse(localStorage.getItem(CASES_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+export function savePersistentCases(cases: PersistentCase[]): void {
+  localStorage.setItem(CASES_KEY, JSON.stringify(cases));
+}
+
+export function createPersistentCase(patient_name: string, is_open: boolean): string {
+  const id = crypto.randomUUID();
+  const newCase: PersistentCase = {
+    id,
+    patient_name,
+    is_open,
+    created_at: new Date().toISOString(),
+  };
+  const all = getPersistentCases();
+  all.push(newCase);
+  savePersistentCases(all);
+  return id;
+}
+
+export function updatePersistentCase(id: string, updates: { patient_name?: string; is_open?: boolean }): void {
+  const all = getPersistentCases();
+  const idx = all.findIndex((c) => c.id === id);
+  if (idx >= 0) {
+    all[idx] = { ...all[idx], ...updates };
+    savePersistentCases(all);
+  }
+}
+
+export function deletePersistentCase(id: string): void {
+  savePersistentCases(getPersistentCases().filter((c) => c.id !== id));
+}
+
+// ── Backup/Restore ──
+
 export function exportAllData(): string {
   return JSON.stringify({
     transcriptions: getTranscriptions(),
     speakers: getSpeakers(),
+    cases: getPersistentCases(),
   }, null, 2);
 }
 
@@ -100,4 +155,5 @@ export function importAllData(json: string): void {
   const data = JSON.parse(json);
   if (data.transcriptions) localStorage.setItem(TRANSCRIPTIONS_KEY, JSON.stringify(data.transcriptions));
   if (data.speakers) localStorage.setItem(SPEAKERS_KEY, JSON.stringify(data.speakers));
+  if (data.cases) localStorage.setItem(CASES_KEY, JSON.stringify(data.cases));
 }

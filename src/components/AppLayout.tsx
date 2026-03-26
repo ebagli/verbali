@@ -1,11 +1,9 @@
 import { ReactNode, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Mic, FileText, Database, Settings, Check, Cloud, HardDrive } from "lucide-react";
+import { Mic, FileText, Database, Settings, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { getGeminiApiKey, setGeminiApiKey } from "@/lib/gemini";
-import { getBackendMode, setBackendMode, getLocalApiUrl, setLocalApiUrl, type BackendMode } from "@/lib/db-backend";
 import { toast } from "sonner";
 
 interface Props {
@@ -19,10 +17,6 @@ export function AppLayout({ children }: Props) {
   const [editing, setEditing] = useState(!getGeminiApiKey());
   const [saved, setSaved] = useState(!!getGeminiApiKey());
 
-  const [backendMode, setBackendModeState] = useState<BackendMode>(getBackendMode());
-  const [localUrl, setLocalUrl] = useState(getLocalApiUrl());
-  const [editingUrl, setEditingUrl] = useState(false);
-
   const maskKey = (key: string) => {
     if (key.length <= 6) return "••••••";
     return key.slice(0, 5) + "••••••";
@@ -33,21 +27,6 @@ export function AppLayout({ children }: Props) {
     setSaved(true);
     setEditing(false);
     toast.success("Chiave API salvata");
-  };
-
-  const toggleBackend = (checked: boolean) => {
-    const mode: BackendMode = checked ? "local" : "cloud";
-    setBackendModeState(mode);
-    setBackendMode(mode);
-    toast.success(mode === "cloud" ? "Backend: Lovable Cloud" : "Backend: Locale (SQLite)");
-    // Reload to apply new backend
-    window.location.reload();
-  };
-
-  const saveLocalUrl = () => {
-    setLocalApiUrl(localUrl);
-    setEditingUrl(false);
-    toast.success("URL API locale salvato");
   };
 
   return (
@@ -91,63 +70,6 @@ export function AppLayout({ children }: Props) {
 
         {/* Bottom settings */}
         <div className="px-3 py-3 border-t border-border space-y-3">
-          {/* Backend Mode Switch */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-              Backend
-            </label>
-            <div className="flex rounded-lg border border-border overflow-hidden h-8">
-              <button
-                onClick={() => { if (backendMode !== "cloud") toggleBackend(false); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium transition-colors ${
-                  backendMode === "cloud"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <Cloud className="h-3 w-3" />
-                Cloud
-              </button>
-              <button
-                onClick={() => { if (backendMode !== "local") toggleBackend(true); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium transition-colors ${
-                  backendMode === "local"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <HardDrive className="h-3 w-3" />
-                Local
-              </button>
-            </div>
-            {backendMode === "local" && (
-              <div className="space-y-1">
-                {editingUrl ? (
-                  <>
-                    <Input
-                      value={localUrl}
-                      onChange={(e) => setLocalUrl(e.target.value)}
-                      placeholder="http://localhost:3001/api"
-                      className="text-[10px] h-6"
-                    />
-                    <Button size="sm" className="w-full h-5 text-[10px]" onClick={saveLocalUrl}>
-                      Salva URL
-                    </Button>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <code className="flex-1 text-[10px] bg-muted px-1.5 py-1 rounded text-muted-foreground truncate">
-                      {localUrl}
-                    </code>
-                    <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setEditingUrl(true)}>
-                      <Settings className="h-2.5 w-2.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Gemini API Key */}
           <div className="space-y-2">
             <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
