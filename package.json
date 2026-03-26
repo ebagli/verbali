@@ -98,7 +98,7 @@
     "appId": "com.verbali.app",
     "productName": "Verbali",
     "directories": {
-      "output": "release"
+      "output": "release_build"
     },
     "files": [
       "dist/**/*",
@@ -106,8 +106,12 @@
     ],
     "win": {
       "target": "portable",
+      "verifyUpdateCodeSignature": false,
       "icon": "public/favicon.ico",
-      "cscLink": null
+      "cscLink": null,
+      "signingHashAlgorithms": [
+        "sha256"
+      ]
     }
   }
 }
