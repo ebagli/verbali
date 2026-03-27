@@ -13,9 +13,7 @@
     "neu:build": "vite build && npx neu build --release"
   },
   "dependencies": {
-    "@ffmpeg/ffmpeg": "^0.12.10",
-    "@ffmpeg/util": "^0.12.1",
-    "@google/generative-ai": "^0.15.0",
+    "@google/genai": "^1.46.0",
     "@hookform/resolvers": "^3.10.0",
     "@neutralinojs/lib": "^6.5.0",
     "@radix-ui/react-accordion": "^1.2.11",
