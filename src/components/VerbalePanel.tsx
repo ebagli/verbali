@@ -151,41 +151,44 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
         })
         .join("\n");
 
-      const systemPrompt = `Sei un assistente legale esperto in malpractice sanitaria e gestione sinistri (CVS). 
-        Trasforma la trascrizione in un report JSON strutturato seguendo queste regole:
+      const systemPrompt = `Sei un assistente legale esperto in malpractice sanitaria e gestione sinistri(CVS). 
 
-        1. Identifica OGNI singolo paziente/pratica.
-        2. patient_name: "COGNOME NOME" (es. ROSSI MARIO). Se ignoto: "IGNOTO".
-        3. description: Analisi tecnica (5-8 frasi). Includere: dinamica, presunti profili di colpa, nesso causale.
-        4. is_open: true (default), false solo se chiuso/archiviato.
-        5. suggested_outcome: SOLO tra ["istruttoria", "riserva", "prematuro", "sviluppi", "archiviazione", "proposta_transattiva"].
+        IL TUO COMPITO ASSOLUTO:
+        Leggi attentamente il copione della seduta medica.Devi estrarre TUTTI i pazienti / pratiche nominate.Ci sono circa 15 - 16 casi in questo testo.NON tralasciarne nessuno, anche se menzionati per pochi secondi o solo per questioni amministrative / spese legali.
+
+        REGOLE DI ESTRAZIONE JSON:
+        1. patient_name: "COGNOME NOME"(es.FERRETTI SERGIO, POETA PIERO).Se ignoto: "IGNOTO".
+        2. description: Breve riassunto di ciò che si dice del caso.Se c'è la dinamica clinica scrivila (dinamica, profili colpa), se invece si parla solo di spese legali, transazioni o ATP, scrivi solo quello. Non devi forzatamente scrivere 5 frasi se i dati non ci sono.
+        3. is_open: true(default ), false solo se esplicitamente detto che è chiuso / archiviato(es.Bivona).
+        4. suggested_outcome: Scegli SOLO tra["istruttoria", "riserva", "prematuro", "sviluppi", "archiviazione", "proposta_transattiva"].Se non sai cosa mettere, usa "sviluppi".
+        5. outcome_extra: Inserisci qui il valore della riserva economica se menzionato(es. "Riserva 500.000 euro", "Riserva zero").
 
         REQUISITI TECNICI:
-        - Rispondi SOLO con JSON valido.
-        - Se mancano dati, usa null o "".
-        - Esegui correttamente l'escape di eventuali virgolette nel testo.
+        - Rispondi SOLO con JSON valido.Niente markdown.
+        - L'array "cases" DEVE contenere tutti i pazienti trovati.;
 
-        STRUTTURA JSON:
-        {
-          "cases": [
-            {
-              "patient_name": "STRING",
-              "description": "STRING",
-              "is_open": BOOLEAN,
-              "suggested_outcome": "STRING",
-              "outcome_extra": "STRING"
-            }
-          ],
+        STRUTTURA JSON RICHIESTA:
+      {
+        "cases": [
+          {
+            "patient_name": "STRING",
+            "description": "STRING",
+            "is_open": BOOLEAN,
+            "suggested_outcome": "STRING",
+            "outcome_extra": "STRING"
+          }
+        ],
           "facility_name": "STRING",
-          "meeting_location": "STRING",
-          "start_time": "HH:MM",
-          "closing_time": "HH:MM",
-          "general_discussion": "STRING",
-          "next_meeting_date": "YYYY-MM-DD",
-          "next_meeting_time": "HH:MM"
-        }`;
+            "meeting_location": "STRING",
+              "start_time": "HH:MM",
+                "closing_time": "HH:MM",
+                  "general_discussion": "STRING",
+                    "next_meeting_date": "YYYY-MM-DD",
+                      "next_meeting_time": "HH:MM"
+      } `;
 
-      const responseText = await callGemini(`${systemPrompt}\n\nTrascrizione:\n${fullText}`);
+      const finalPrompt = `${systemPrompt} \n\n<TRASCRIZIONE>\n${fullText} \n</TRASCRIZIONE > `;
+      const responseText = await callGemini(finalPrompt);
       const data = parseGeminiJson(responseText);
 
       const extracted: ReportCase[] = (data.cases || []).map((c: any) => ({
@@ -228,7 +231,7 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
     if (cases.length === 0) { errors.cases = true; missingFields.push("Pratiche (almeno una)"); }
     if (missingFields.length > 0) {
       setValidationErrors(errors);
-      toast.error(`Campi mancanti: ${missingFields.join(", ")}`);
+      toast.error(`Campi mancanti: ${missingFields.join(", ")} `);
       return;
     }
     setValidationErrors({});

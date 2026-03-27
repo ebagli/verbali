@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Plus, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Plus, X, Loader2, FileDown } from "lucide-react";
 import { SpeakerMappingCard, resolveDisplayName } from "@/components/SpeakerMappingCard";
 import { VerbalePanel } from "@/components/VerbalePanel";
 import { getTranscription, saveTranscription, getSpeakers, type TranscriptSegment } from "@/lib/local-store";
@@ -67,6 +67,18 @@ const TranscriptionEditor = () => {
     setSaving(false);
   };
 
+  const handleExportRawJson = () => {
+    const data = { segments: segments };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transcript_${id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("JSON originale esportato");
+  };
+
   const updateSegment = (index: number, field: keyof TranscriptSegment, value: string) => {
     setSegments((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
   };
@@ -104,6 +116,9 @@ const TranscriptionEditor = () => {
           <h1 className="text-base font-semibold">Editor Verbale</h1>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={handleExportRawJson} className="gap-1.5">
+            <FileDown className="h-3.5 w-3.5" /> Esporta JSON
+          </Button>
           <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             {saving ? "Salvando…" : "Salva"}
