@@ -3,7 +3,7 @@ import path from "path";
 import { defineConfig } from "vite";
 
 export default defineConfig(({ mode }) => ({
-  base: "./",
+  base: "./", 
   server: {
     host: "::",
     port: 8080,
@@ -27,5 +27,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist",
+    emptyOutDir: true,
+    assetsDir: "assets",
   },
 }));

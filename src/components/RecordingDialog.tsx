@@ -6,6 +6,8 @@ import { Loader2, Mic, Square, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 interface Props {
   open: boolean;
@@ -16,21 +18,15 @@ interface Props {
 const PROMPT = `Trascrivi l'audio fornito seguendo rigorosamente queste regole:
     1. Lingua: Italiano.
     2. Diarizzazione: Identifica i diversi parlanti (speaker_0, speaker_1, etc.).
-    3. Formato: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido. Non aggiungere saluti o spiegazioni.
-
+    3. Formato: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido. 
     Struttura richiesta:
     {
       "segments": [
-        { "speaker": "speaker_0", "text": "...", "start": 0.0, "end": 5.0 },
-        { "speaker": "speaker_1", "text": "...", "start": 5.1, "end": 10.0 }
+        { "speaker": "speaker_0", "text": "...", "start": 0.0, "end": 5.0 }
       ],
-      "text": "Il testo completo unito..."
+      "text": "..."
     }
-
-    ATTENZIONE: Se non riesci a trascrivere, restituisci un JSON con campi vuoti, mai testo libero.`;
-
-// 20MB è il limite ideale per non appesantire il caricamento Base64
-const CHUNK_SIZE_BYTES = 20 * 1024 * 1024;
+    ATTENZIONE: Se l'audio è silenzioso o incomprensibile, restituisci segments vuoti. Non inventare testo.`;
 
 export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   const navigate = useNavigate();
@@ -40,6 +36,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const ffmpegRef = useRef<FFmpeg | null>(null);
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -55,8 +52,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
 
   const transcribeChunk = async (blob: Blob, mimeType: string, index: number): Promise<TranscriptSegment[]> => {
     const audioBase64 = await blobToBase64(blob);
-    // Offset temporale stimato (300s = 5 min per chunk da ~20MB mediamente)
-    const timeOffset = index * 300;
+    const timeOffset = index * 300; // 300 secondi = 5 minuti
 
     const responseText = await callGeminiWithAudio(audioBase64, mimeType, PROMPT);
     const result = parseGeminiJson(responseText);
@@ -64,9 +60,26 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
     return (result.segments || []).map((s: any) => ({
       speaker: s.speaker || "speaker_0",
       text: s.text || "",
-      start: (s.start || 0) + timeOffset,
-      end: (s.end || 0) + timeOffset,
+      start: (Number(s.start) || 0) + timeOffset,
+      end: (Number(s.end) || 0) + timeOffset,
     }));
+  };
+
+  const loadFFmpeg = async () => {
+    if (ffmpegRef.current) return ffmpegRef.current;
+    
+    const ffmpeg = new FFmpeg();
+    setProcessingLabel("Caricamento motore audio...");
+    
+    // Caricamento sicuro tramite Blob URL per bypassare restrizioni CORS/COEP
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    
+    ffmpegRef.current = ffmpeg;
+    return ffmpeg;
   };
 
   const processAudio = async (file: Blob | File) => {
@@ -75,34 +88,52 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       return;
     }
 
+    // Verifica SharedArrayBuffer (Se è undefined, FFmpeg non partirà mai)
+    if (typeof SharedArrayBuffer === 'undefined') {
+      toast.error("Errore di sicurezza browser: SharedArrayBuffer non disponibile.");
+      console.error("COOP/COEP headers non configurati correttamente nel main.js");
+      return;
+    }
+
     setProcessing(true);
+    
     try {
-      setProcessingLabel("Analisi file...");
+      const ffmpeg = await loadFFmpeg();
 
-      // 1. Slicing binario: Istantaneo, non usa RAM extra
-      const audioChunks: Blob[] = [];
-      let start = 0;
-      while (start < file.size) {
-        audioChunks.push(file.slice(start, start + CHUNK_SIZE_BYTES, file.type));
-        start += CHUNK_SIZE_BYTES;
+      setProcessingLabel("Preparazione file...");
+      await ffmpeg.writeFile('input_audio', await fetchFile(file));
+
+      // Dividiamo in pezzi da 5 minuti (300s) invece di 10
+      await ffmpeg.exec([
+        '-i', 'input_audio',
+        '-f', 'segment',
+        '-segment_time', '300', 
+        '-c', 'copy',
+        'out%03d.mp3'
+      ]);
+
+      const allFiles = await ffmpeg.listDir('.');
+      const chunkFiles = allFiles
+        .filter(f => f.name.startsWith('out'))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const allSegments: TranscriptSegment[] = [];
+
+      for (let i = 0; i < chunkFiles.length; i++) {
+        setProcessingLabel(`Trascrizione parte ${i + 1} di ${chunkFiles.length}...`);
+        const data = await ffmpeg.readFile(chunkFiles[i].name);
+        const chunkBlob = new Blob([data], { type: 'audio/mp3' });
+        
+        try {
+          const segments = await transcribeChunk(chunkBlob, "audio/mp3", i);
+          allSegments.push(...segments);
+        } catch (e) {
+          console.warn(`Errore nel chunk ${i}, salto...`, e);
+        }
       }
 
-      setProcessingLabel(`Trascrizione di ${audioChunks.length} parti...`);
+      if (allSegments.length === 0) throw new Error("Nessun testo rilevato.");
 
-      // 2. Esecuzione parallela con gestione degli errori
-      // Usiamo allSettled per non perdere tutto se un pezzo fallisce
-      const promises = audioChunks.map((chunk, i) => transcribeChunk(chunk, file.type || "audio/webm", i));
-      const results = await Promise.allSettled(promises);
-
-      const allSegments = results
-        .filter((r): r is PromiseFulfilledResult<TranscriptSegment[]> => r.status === 'fulfilled')
-        .flatMap(r => r.value);
-
-      if (allSegments.length === 0) {
-        throw new Error("La trascrizione non ha prodotto risultati.");
-      }
-
-      // 3. Salvataggio locale
       const id = crypto.randomUUID();
       saveTranscription({
         id,
@@ -114,12 +145,12 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
         report_html: "",
       });
 
-      toast.success("Trascrizione completata!");
+      toast.success("Completato!");
       onComplete();
       navigate(`/transcription/${id}`);
     } catch (err: any) {
-      console.error("Errore processAudio:", err);
-      toast.error(err.message || "Errore durante l'elaborazione.");
+      console.error("Errore elaborazione:", err);
+      toast.error("Errore durante l'elaborazione dell'audio.");
     } finally {
       setProcessing(false);
     }
@@ -145,7 +176,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
       mediaRecorder.start(1000);
       setRecording(true);
     } catch {
-      toast.error("Accesso al microfono negato");
+      toast.error("Microfono non disponibile");
     }
   }, []);
 
@@ -160,7 +191,7 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
         <DialogHeader>
           <DialogTitle>Registra o Carica Audio</DialogTitle>
           <DialogDescription>
-            Supporta file di grandi dimensioni. L'audio verrà diviso e trascritto in parallelo.
+            L'audio verrà diviso e trascritto con l'AI.
           </DialogDescription>
         </DialogHeader>
 
@@ -174,8 +205,9 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
             <>
               <button
                 onClick={recording ? stopRecording : startRecording}
-                className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${recording ? "bg-destructive text-white animate-pulse" : "bg-primary text-white hover:opacity-90"
-                  }`}
+                className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${
+                  recording ? "bg-destructive text-white animate-pulse" : "bg-primary text-white hover:opacity-90"
+                }`}
               >
                 {recording ? <Square className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
               </button>
@@ -184,32 +216,22 @@ export function RecordingDialog({ open, onOpenChange, onComplete }: Props) {
                 <p className="text-sm font-medium">
                   {recording ? "Registrazione in corso..." : "Clicca per registrare"}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  L'audio viene elaborato localmente per la massima privacy.
-                </p>
               </div>
 
               <div className="w-full border-t pt-6 flex flex-col items-center gap-3">
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.webm,.aac"
+                  accept="audio/*"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (file) {
-                      if (!file.type.startsWith("audio/") && !/\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i.test(file.name)) {
-                        toast.error("Seleziona un file audio valido (MP3, WAV, M4A, ecc.)");
-                        e.target.value = "";
-                        return;
-                      }
-                      processAudio(file);
-                    }
+                    if (file) processAudio(file);
                     e.target.value = "";
                   }}
                 />
                 <Button variant="outline" className="w-full gap-2" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-4 w-4" /> Seleziona file audio (MP3, WAV, M4A)
+                  <Upload className="h-4 w-4" /> Seleziona file audio
                 </Button>
               </div>
             </>
