@@ -22,8 +22,7 @@
       "center": true,
       "fullScreen": false,
       "alwaysOnTop": false,
-      "icon": "/favicon.ico",
-      "enableInspector": false
+      "enableInspector": true
     }
   },
   "cli": {
