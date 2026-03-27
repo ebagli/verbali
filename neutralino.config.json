@@ -22,7 +22,7 @@
       "center": true,
       "fullScreen": false,
       "alwaysOnTop": false,
-      "enableInspector": true
+      "enableInspector": false
     }
   },
   "cli": {
