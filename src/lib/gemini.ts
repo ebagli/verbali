@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL = "gemini-3.1-flash-lite-preview";
+const MODEL = "gemini-3.1-pro-preview";
 const API_KEY_STORAGE = "gemini_api_key";
 
 export function getGeminiApiKey(): string {
@@ -26,7 +26,7 @@ export async function callGemini(prompt: string): Promise<string> {
   const response = await ai.models.generateContent({
     model: MODEL,
     contents: prompt,
-    config: { maxOutputTokens: 64000, temperature: 0.2 }
+    config: { maxOutputTokens: 64000, temperature: 0. }
   });
   return response.text || "";
 }
