@@ -185,7 +185,7 @@ export const VerbalePanel = forwardRef<{ getVerbaleState: () => VerbaleState }, 
           "next_meeting_time": "HH:MM"
         }`;
 
-      const responseText = await callGemini(`${systemPrompt}\n\nTrascrizione:\n${fullText}`, { jsonMode: true });
+      const responseText = await callGemini(`${systemPrompt}\n\nTrascrizione:\n${fullText}`);
       const data = parseGeminiJson(responseText);
 
       const extracted: ReportCase[] = (data.cases || []).map((c: any) => ({

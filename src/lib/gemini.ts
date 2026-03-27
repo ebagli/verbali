@@ -1,7 +1,20 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.1-flash-lite-preview";
 const API_KEY_STORAGE = "gemini_api_key";
+
+// Zod Schema for robust response validation
+const TranscriptionSchema = z.object({
+  segments: z.array(z.object({
+    speaker: z.string().describe("Identificativo del parlante (es. speaker_0)"),
+    text: z.string().describe("Testo pronunciato"),
+    start: z.number().describe("Tempo di inizio in secondi"),
+    end: z.number().describe("Tempo di fine in secondi")
+  })).optional(),
+  text: z.string().describe("Testo completo della trascrizione").optional()
+});
 
 export function getGeminiApiKey(): string {
   return localStorage.getItem(API_KEY_STORAGE) || "";
@@ -15,61 +28,42 @@ export function hasGeminiApiKey(): boolean {
   return !!getGeminiApiKey();
 }
 
-function getClient(): GoogleGenAI {
+function getClient(): GoogleGenerativeAI {
   const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Chiave API Gemini non configurata. Vai nelle impostazioni per inserirla.");
-  return new GoogleGenAI({ apiKey });
+  if (!apiKey) throw new Error("Chiave API Gemini non configurata.");
+  return new GoogleGenerativeAI(apiKey);
 }
 
-export async function callGemini(prompt: string, options?: { jsonMode?: boolean; maxTokens?: number }): Promise<string> {
-  try {
+const generationConfig = {
+  maxOutputTokens: 32768,
+  temperature: 0.2,
+};
+
+export async function callGemini(prompt: string): Promise<string> {
     const ai = getClient();
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        ...(options?.jsonMode ? { responseMimeType: "application/json" } : {}),
-        maxOutputTokens: options?.maxTokens || 16384,
-        temperature: 0.2,
-      },
-    });
-    const text = response.text;
-    if (!text) throw new Error("Nessuna risposta da Gemini.");
-    return text;
-  } catch (err: any) {
-    if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
-      throw new Error("Rate limit Gemini superato, riprova tra poco.");
-    }
-    if (err.message?.includes("400") || err.message?.includes("INVALID_ARGUMENT")) {
-      throw new Error("Chiave API Gemini non valida. Controlla nelle impostazioni.");
-    }
-    throw err;
-  }
+    const model = ai.getGenerativeModel({ model: MODEL, generationConfig });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
 }
 
-export async function callGeminiWithAudio(audioBase64: string, mimeType: string, prompt: string): Promise<string> {
+export async function callGeminiWithAudio(audioBase64: string, mimeType: string, prompt: string): Promise<any> {
   try {
     const ai = getClient();
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType, data: audioBase64 } },
-            { text: prompt },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: 16384,
-        temperature: 0.2,
-      },
+    const model = ai.getGenerativeModel({ 
+        model: MODEL, 
+        generationConfig: { ...generationConfig, responseMimeType: "application/json" } 
     });
-    const text = response.text;
+    
+    const result = await model.generateContent([
+        prompt,
+        { inlineData: { mimeType, data: audioBase64 } }
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
     if (!text) throw new Error("Nessuna risposta da Gemini.");
-    return text;
+    return JSON.parse(text); 
   } catch (err: any) {
     if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
       throw new Error("Rate limit Gemini superato, riprova tra poco.");
@@ -81,43 +75,13 @@ export async function callGeminiWithAudio(audioBase64: string, mimeType: string,
   }
 }
 
-export function parseGeminiJson(text: string): any {
-  let cleaned = text.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
-  }
-
-  const fixJson = (json: string): string => {
-    let result = json;
-    const openBraces = (result.match(/{/g) || []).length;
-    const closeBraces = (result.match(/}/g) || []).length;
-    const openBrackets = (result.match(/\[/g) || []).length;
-    const closeBrackets = (result.match(/]/g) || []).length;
-
-    for (let i = 0; i < openBrackets - closeBrackets; i++) {
-      if (!result.trim().endsWith("]")) result += "]";
-    }
-    for (let i = 0; i < openBraces - closeBraces; i++) {
-      if (!result.trim().endsWith("}")) result += "}";
-    }
-
-    result = result.replace(/,\s*([}\]])/g, "$1");
-    return result;
-  };
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    try {
-      const fixed = fixJson(cleaned);
-      return JSON.parse(fixed);
-    } catch {
-      cleaned = cleaned.replace(/'/g, '"').replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+export function parseGeminiJson(data: any): any {
+  if (typeof data === 'string') {
       try {
-        return JSON.parse(cleaned);
+          return JSON.parse(data);
       } catch {
-        return JSON.parse(fixJson(cleaned));
+          return { transcript: data }; 
       }
-    }
   }
+  return data;
 }

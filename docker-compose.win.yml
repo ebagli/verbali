@@ -1,7 +1,0 @@
-services:
-  build-win:
-    build:
-      context: .
-      dockerfile: Dockerfile.win
-    volumes:
-      - ./release:/output

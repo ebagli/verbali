@@ -162,11 +162,14 @@ const DatabaseDashboard = () => {
     }
   };
 
-  const openCasesCount = persistentCases.filter(c => c.is_open).length;
-
-  const getOutcomeLabel = (id: string) => {
-    const o = REPORT_TEMPLATE.standard_outcomes.find(o => o.id === id);
-    return o ? o.label : id || "—";
+  const getCaseVerbaleCount = (caseId: string) => {
+    return getTranscriptions().filter(t => {
+      if (!t.report_html) return false;
+      try {
+        const state: VerbaleState = JSON.parse(t.report_html);
+        return (state.cases || []).some((c: ReportCase) => c.caseId === caseId);
+      } catch { return false; }
+    }).length;
   };
 
   if (selectedCase) {
@@ -203,7 +206,6 @@ const DatabaseDashboard = () => {
                           <Badge variant={ev.isOpen ? "destructive" : "secondary"} className="text-xs">
                             {ev.isOpen ? "Aperto" : "Chiuso"}
                           </Badge>
-                          <Badge variant="outline">{getOutcomeLabel(ev.outcomeId)}</Badge>
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground">{ev.description || "Nessuna descrizione"}</p>
@@ -228,10 +230,10 @@ const DatabaseDashboard = () => {
           <h1 className="text-2xl font-bold tracking-tight">Database</h1>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-1.5">
-              <FileUp className="h-3.5 w-3.5" /> Importa JSON
+              <FileUp className="h-3.5 w-3.5" /> Importa
             </Button>
             <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)} className="gap-1.5">
-              <FileDown className="h-3.5 w-3.5" /> Esporta JSON
+              <FileDown className="h-3.5 w-3.5" /> Esporta
             </Button>
             <Button variant="outline" size="sm" onClick={fetchAll} className="gap-1.5">
               <Users className="h-3.5 w-3.5" /> Aggiorna
@@ -257,8 +259,8 @@ const DatabaseDashboard = () => {
                 <FolderOpen className="h-5 w-5 text-destructive" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{openCasesCount}</p>
-                <p className="text-xs text-muted-foreground">Casi aperti</p>
+                <p className="text-2xl font-bold">{persistentCases.length}</p>
+                <p className="text-xs text-muted-foreground">Totale Casi</p>
               </div>
             </CardContent>
           </Card>
@@ -339,14 +341,14 @@ const DatabaseDashboard = () => {
               </CardHeader>
               <CardContent>
                 {persistentCases.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">Nessun caso registrato. I casi verranno creati automaticamente al salvataggio dei verbali.</p>
+                  <p className="text-sm text-muted-foreground italic">Nessun caso registrato.</p>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Paziente</TableHead>
-                        <TableHead>Stato</TableHead>
                         <TableHead>Creato il</TableHead>
+                        <TableHead>Verbali</TableHead>
                         <TableHead className="w-12"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -354,13 +356,11 @@ const DatabaseDashboard = () => {
                       {persistentCases.map((c) => (
                         <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadCaseEvolution(c)}>
                           <TableCell className="font-medium">{c.patient_name}</TableCell>
-                          <TableCell>
-                            <Badge variant={c.is_open ? "destructive" : "secondary"} className="text-xs">
-                              {c.is_open ? "Aperto" : "Chiuso"}
-                            </Badge>
-                          </TableCell>
                           <TableCell className="text-muted-foreground text-xs">
                             {new Date(c.created_at).toLocaleDateString("it-IT")}
+                          </TableCell>
+                          <TableCell>
+                            {getCaseVerbaleCount(c.id)}
                           </TableCell>
                           <TableCell>
                             <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -412,7 +412,6 @@ const DatabaseDashboard = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Modifica Partecipante</DialogTitle>
-            <DialogDescription>Modifica il titolo e il nome del partecipante.</DialogDescription>
           </DialogHeader>
           <Input placeholder="Titolo" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
           <Input placeholder="Nome Cognome" value={editName} onChange={(e) => setEditName(e.target.value)} />
@@ -425,12 +424,11 @@ const DatabaseDashboard = () => {
       <Dialog open={exportDialogOpen} onOpenChange={(open) => { setExportDialogOpen(open); if (!open) setPassword(""); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Esporta Backup Completo</DialogTitle>
-            <DialogDescription>Esporta tutti i verbali, partecipanti e dati come file GZIP crittografato.</DialogDescription>
+            <DialogTitle>Esporta Backup</DialogTitle>
           </DialogHeader>
           <Input type="password" placeholder="Password di crittografia..." value={password} onChange={(e) => setPassword(e.target.value)} />
           <DialogFooter>
-            <Button onClick={handleExportAll} className="gap-1.5"><FileDown className="h-4 w-4" /> Esporta</Button>
+            <Button onClick={handleExportAll} className="gap-1.5">Esporta</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -439,12 +437,11 @@ const DatabaseDashboard = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Importa Backup</DialogTitle>
-            <DialogDescription>Seleziona il file di backup e inserisci la password.</DialogDescription>
           </DialogHeader>
           <Input type="file" accept=".gz.enc,.gz,.gzip" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
           <Input type="password" placeholder="Password di crittografia..." value={password} onChange={(e) => setPassword(e.target.value)} />
           <DialogFooter>
-            <Button onClick={handleImportAll} className="gap-1.5"><Upload className="h-4 w-4" /> Importa</Button>
+            <Button onClick={handleImportAll} className="gap-1.5">Importa</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
